@@ -107,6 +107,8 @@ public class DocumentEntityDescriptor
 	private final DocumentFilterDescriptorsProvider filtersProvider;
 
 	private final OptionalInt printProcessId;
+	
+	private boolean highVolume;
 
 	// Legacy
 	private final OptionalInt AD_Tab_ID;
@@ -145,6 +147,8 @@ public class DocumentEntityDescriptor
 		filtersProvider = builder.createFiltersProvider();
 
 		printProcessId = builder.getPrintAD_Process_ID();
+		
+		highVolume = builder.isHighVolume();
 
 		// legacy:
 		AD_Tab_ID = builder.getAD_Tab_ID();
@@ -367,6 +371,11 @@ public class DocumentEntityDescriptor
 	{
 		return printProcessId.orElseThrow(() -> new IllegalStateException("No print process configured for " + this));
 	}
+	
+	public boolean isHighVolume()
+	{
+		return highVolume;
+	}
 
 	public static final class Builder
 	{
@@ -399,11 +408,14 @@ public class DocumentEntityDescriptor
 		private boolean _defaultTableCalloutsEnabled = true; // enabled by default
 
 		private OptionalInt _printProcessId = OptionalInt.empty();
+		
+		private boolean highVolume = false;
 
 		// Legacy
 		private OptionalInt _AD_Tab_ID = OptionalInt.empty();
 		private Optional<String> _tableName = Optional.empty();
 		private Optional<Boolean> _isSOTrx = Optional.empty();
+
 
 		private Builder()
 		{
@@ -885,6 +897,17 @@ public class DocumentEntityDescriptor
 		private OptionalInt getPrintAD_Process_ID()
 		{
 			return _printProcessId;
+		}
+		
+		public Builder setHighVolume(final boolean highVolume)
+		{
+			this.highVolume = highVolume;
+			return this;
+		}
+		
+		private boolean isHighVolume()
+		{
+			return highVolume;
 		}
 	}
 }

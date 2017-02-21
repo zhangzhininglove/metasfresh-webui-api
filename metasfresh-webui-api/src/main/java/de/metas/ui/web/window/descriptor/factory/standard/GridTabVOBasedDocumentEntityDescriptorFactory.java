@@ -195,7 +195,9 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 				.setTableName(tableName) // legacy
 				.setIsSOTrx(isSOTrx) // legacy
 				//
-				.setPrintAD_Process_ID(gridTabVO.getPrint_Process_ID());
+				.setPrintAD_Process_ID(gridTabVO.getPrint_Process_ID())
+				//
+				.setHighVolume(gridTabVO.IsHighVolume);
 
 		//
 		// Fields descriptor
