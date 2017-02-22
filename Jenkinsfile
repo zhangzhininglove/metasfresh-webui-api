@@ -331,11 +331,20 @@ node('agent && linux') // shall only run on a jenkins agent with linux
 				// maven.test.failure.ignore=true: continue if tests fail, because we want a full report.
 				sh "mvn --settings $MAVEN_SETTINGS --file pom.xml --batch-mode -Dmaven.test.failure.ignore=true ${MF_MAVEN_TASK_RESOLVE_PARAMS} ${MF_MAVEN_TASK_DEPLOY_PARAMS} clean deploy"
 
+				final BUILD_ARTIFACT_URL="https://repo.metasfresh.com/content/repositories/${MF_MAVEN_REPO_NAME}/de/metas/ui/web/metasfresh-webui-api/${BUILD_VERSION}/metasfresh-webui-api-${BUILD_VERSION}.jar";
+				
 				// IMPORTANT: we might parse this build description's href value in downstream builds!
 currentBuild.description="""artifacts (if not yet cleaned up)
 				<ul>
-<li><a href=\"https://repo.metasfresh.com/content/repositories/${MF_MAVEN_REPO_NAME}/de/metas/ui/web/metasfresh-webui-api/${BUILD_VERSION}/metasfresh-webui-api-${BUILD_VERSION}.jar\">metasfresh-webui-api-${BUILD_VERSION}.jar</a></li>
+<li><a href=\"${BUILD_ARTIFACT_URL}\">metasfresh-webui-api-${BUILD_VERSION}.jar</a></li>
 </ul>"""
+
+				// gh #968:
+				// set env variables which bill be available to a possible upstream job that might have called us
+				// all those env variables can be gotten from <buildResultInstance>.getBuildVariables()
+				env.BUILD_ARTIFACT_URL="${BUILD_ARTIFACT_URL}";
+				env.BUILD_CHANGE_URL="${env.CHANGE_URL}";
+				env.BUILD_VERSION="${BUILD_VERSION}";
 
 				junit '**/target/surefire-reports/*.xml'
             }
