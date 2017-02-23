@@ -8,13 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.adempiere.ad.expression.api.IExpressionEvaluator.OnVariableNotFound;
-import org.adempiere.ad.expression.api.ILogicExpression;
-import org.adempiere.ad.expression.api.LogicExpressionResult;
 import org.slf4j.Logger;
 
 import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
 
@@ -27,7 +23,6 @@ import de.metas.ui.web.window.descriptor.DetailId;
 import de.metas.ui.web.window.descriptor.DocumentEntityDescriptor;
 import de.metas.ui.web.window.exceptions.DocumentNotFoundException;
 import de.metas.ui.web.window.exceptions.InvalidDocumentPathException;
-import de.metas.ui.web.window.exceptions.InvalidDocumentStateException;
 import de.metas.ui.web.window.model.Document.CopyMode;
 
 /*
@@ -52,14 +47,9 @@ import de.metas.ui.web.window.model.Document.CopyMode;
  * #L%
  */
 
-/* package */class IncludedDocumentsCollection implements IIncludedDocumentsCollection
+/* package */class IncludedDocumentsCollection extends AbstractDocumentsCollection
 {
 	private static final transient Logger logger = LogManager.getLogger(IncludedDocumentsCollection.class);
-
-	private static final LogicExpressionResult LOGICRESULT_FALSE_ParentDocumentProcessed = LogicExpressionResult.namedConstant("ParentDocumentProcessed", false);
-
-	private final DocumentEntityDescriptor entityDescriptor;
-	private final Document parentDocument;
 
 	private final LinkedHashMap<DocumentId, Document> _documents;
 
@@ -69,8 +59,7 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 
 	/* package */ IncludedDocumentsCollection(final Document parentDocument, final DocumentEntityDescriptor entityDescriptor)
 	{
-		this.parentDocument = Preconditions.checkNotNull(parentDocument);
-		this.entityDescriptor = Preconditions.checkNotNull(entityDescriptor);
+		super(parentDocument, entityDescriptor);
 
 		// State
 		_fullyLoaded = false;
@@ -83,9 +72,7 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 	/** copy constructor */
 	private IncludedDocumentsCollection(final IncludedDocumentsCollection from, final Document parentDocumentCopy, final CopyMode copyMode)
 	{
-		super();
-		parentDocument = Preconditions.checkNotNull(parentDocumentCopy);
-		entityDescriptor = from.entityDescriptor;
+		super(parentDocumentCopy, from.entityDescriptor);
 
 		// State
 		_fullyLoaded = from._fullyLoaded;
@@ -103,11 +90,6 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 				.add("detailId", entityDescriptor.getDetailId())
 				.add("documentsCount", _documents.size())
 				.toString();
-	}
-
-	private final void assertWritable()
-	{
-		parentDocument.assertWritable();
 	}
 
 	private final boolean isFullyLoaded()
@@ -160,11 +142,12 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 		markNotFullyLoaded();
 		_staleDocumentIds.addAll(_documents.keySet());
 
+		final Document parentDocument = getParentDocument();
 		Execution.getCurrentDocumentChangesCollectorOrNull()
 				.collectStaleDetailId(parentDocument.getDocumentPath(), getDetailId());
 	}
 
-	public DetailId getDetailId()
+	private DetailId getDetailId()
 	{
 		return entityDescriptor.getDetailId();
 	}
@@ -196,6 +179,7 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 		//
 		// Load from underlying repository
 		// document = loadById(id);
+		final Document parentDocument = getParentDocument();
 		final Document documentNew = DocumentQuery.builder(entityDescriptor)
 				.setRecordId(documentId)
 				.setParentDocument(parentDocument)
@@ -292,11 +276,7 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 	@Override
 	public synchronized Document createNewDocument()
 	{
-		assertWritable();
-		assertNewDocumentAllowed();
-
-		final DocumentsRepository documentsRepository = entityDescriptor.getDataBinding().getDocumentsRepository();
-		final Document document = documentsRepository.createNewDocument(entityDescriptor, parentDocument);
+		final Document document = super.createNewDocument();
 
 		final DocumentId documentId = document.getDocumentId();
 		_documents.put(documentId, document);
@@ -304,57 +284,13 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 		return document;
 	}
 
-	@Override
-	public void assertNewDocumentAllowed()
-	{
-		final LogicExpressionResult allowCreateNewDocument = getAllowCreateNewDocument();
-		if (allowCreateNewDocument.isFalse())
-		{
-			throw new InvalidDocumentStateException(parentDocument, "Cannot create included document because it's not allowed."
-					+ "\n AllowCreateNewDocument: " + allowCreateNewDocument
-					+ "\n EntityDescriptor: " + entityDescriptor);
-		}
-	}
-
-	public LogicExpressionResult getAllowCreateNewDocument()
-	{
-		if (parentDocument.isProcessed())
-		{
-			return LOGICRESULT_FALSE_ParentDocumentProcessed;
-		}
-
-		final ILogicExpression allowCreateNewLogic = entityDescriptor.getAllowCreateNewLogic();
-		final LogicExpressionResult allowCreateNew = allowCreateNewLogic.evaluateToResult(parentDocument.asEvaluatee(), OnVariableNotFound.ReturnNoResult);
-		return allowCreateNew;
-	}
-
-	private void assertDeleteDocumentAllowed(final Document document)
-	{
-		final LogicExpressionResult allowDelete = getAllowDeleteDocument();
-		if (allowDelete.isFalse())
-		{
-			throw new InvalidDocumentStateException(parentDocument, "Cannot delete included document because it's not allowed: " + allowDelete);
-		}
-	}
-
-	private LogicExpressionResult getAllowDeleteDocument()
-	{
-		if (parentDocument.isProcessed())
-		{
-			return LOGICRESULT_FALSE_ParentDocumentProcessed;
-		}
-
-		final ILogicExpression allowDeleteLogic = entityDescriptor.getAllowDeleteLogic();
-		final LogicExpressionResult allowDelete = allowDeleteLogic.evaluateToResult(parentDocument.asEvaluatee(), OnVariableNotFound.ReturnNoResult);
-		return allowDelete;
-	}
 
 	private final void loadAll()
 	{
 		//
 		// Retrieve the documents from repository
 		final List<Document> documentsNew = DocumentQuery.builder(entityDescriptor)
-				.setParentDocument(parentDocument)
+				.setParentDocument(getParentDocument())
 				.retriveDocuments();
 
 		final Map<DocumentId, Document> documents = _documents;

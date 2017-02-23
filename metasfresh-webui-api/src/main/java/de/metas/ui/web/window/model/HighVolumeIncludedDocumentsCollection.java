@@ -3,8 +3,6 @@ package de.metas.ui.web.window.model;
 import java.util.List;
 import java.util.Set;
 
-import com.google.common.base.Preconditions;
-
 import de.metas.ui.web.exceptions.OperationNotAllowedException;
 import de.metas.ui.web.window.datatypes.DocumentId;
 import de.metas.ui.web.window.datatypes.DocumentPath;
@@ -34,15 +32,11 @@ import de.metas.ui.web.window.model.Document.CopyMode;
  * #L%
  */
 
-/* package */class HighVolumeIncludedDocumentsCollection implements IIncludedDocumentsCollection
+/* package */class HighVolumeIncludedDocumentsCollection extends AbstractDocumentsCollection
 {
-	private final DocumentEntityDescriptor entityDescriptor;
-	private final Document parentDocument;
-
 	public HighVolumeIncludedDocumentsCollection(final Document parentDocument, final DocumentEntityDescriptor entityDescriptor)
 	{
-		this.parentDocument = Preconditions.checkNotNull(parentDocument);
-		this.entityDescriptor = Preconditions.checkNotNull(entityDescriptor);
+		super(parentDocument, entityDescriptor);
 	}
 
 	@Override
@@ -55,13 +49,15 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 	public List<Document> getDocuments()
 	{
 		return DocumentQuery.builder(entityDescriptor)
-				.setParentDocument(parentDocument)
+				.setParentDocument(getParentDocument())
 				.retriveDocuments();
 	}
 
 	@Override
 	public Document getDocumentById(final DocumentId documentId)
 	{
+		final Document parentDocument = getParentDocument();
+		
 		final Document document = DocumentQuery.builder(entityDescriptor)
 				.setParentDocument(parentDocument)
 				.setRecordId(documentId)
@@ -74,18 +70,6 @@ import de.metas.ui.web.window.model.Document.CopyMode;
 			throw new DocumentNotFoundException(documentPath);
 		}
 		return document;
-	}
-
-	@Override
-	public void assertNewDocumentAllowed()
-	{
-		throw new OperationNotAllowedException("creating new document is not allowed");
-	}
-
-	@Override
-	public Document createNewDocument()
-	{
-		throw new OperationNotAllowedException("creating new document is not allowed");
 	}
 
 	@Override
