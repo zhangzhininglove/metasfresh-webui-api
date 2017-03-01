@@ -1,5 +1,7 @@
 package de.metas.ui.web.window.descriptor.factory;
 
+import java.util.List;
+
 import org.adempiere.util.lang.impl.TableRecordReference;
 
 import de.metas.ui.web.window.datatypes.DocumentPath;
@@ -73,5 +75,7 @@ public interface DocumentDescriptorFactory
 		final int recordId = documentPath.getSingleRowId().toInt();
 		return TableRecordReference.of(tableName, recordId);
 	}
+
+	List<DocumentPath> getDocumentPaths(String tableName, int recordIdInt);
 
 }

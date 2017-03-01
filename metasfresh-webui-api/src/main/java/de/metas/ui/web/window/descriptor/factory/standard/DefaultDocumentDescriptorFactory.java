@@ -1,10 +1,21 @@
 package de.metas.ui.web.window.descriptor.factory.standard;
 
+import java.util.List;
+import java.util.Set;
+
+import org.adempiere.util.Check;
 import org.compiere.model.I_AD_Window;
 import org.compiere.util.CCache;
 import org.springframework.stereotype.Service;
 
+import com.google.common.base.Objects;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+
+import de.metas.ui.web.window.datatypes.DocumentId;
+import de.metas.ui.web.window.datatypes.DocumentPath;
 import de.metas.ui.web.window.descriptor.DocumentDescriptor;
+import de.metas.ui.web.window.descriptor.DocumentEntityDescriptor;
 import de.metas.ui.web.window.descriptor.factory.DocumentDescriptorFactory;
 import de.metas.ui.web.window.exceptions.DocumentLayoutBuildException;
 
@@ -21,11 +32,11 @@ import de.metas.ui.web.window.exceptions.DocumentLayoutBuildException;
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public
- * License along with this program.  If not, see
+ * License along with this program. If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
  * #L%
  */
@@ -34,6 +45,7 @@ import de.metas.ui.web.window.exceptions.DocumentLayoutBuildException;
 public class DefaultDocumentDescriptorFactory implements DocumentDescriptorFactory
 {
 	private final CCache<Integer, DocumentDescriptor> documentDescriptorsByWindowId = new CCache<>(I_AD_Window.Table_Name + "#DocumentDescriptor", 50);
+	private final CCache<String, Set<DocumentEntityDescriptor>> entityDescriptorsByTableName = new CCache<>(I_AD_Window.Table_Name + "#EntityDescriptorsByTableName", 50);
 
 	/* package */ DefaultDocumentDescriptorFactory()
 	{
@@ -45,11 +57,43 @@ public class DefaultDocumentDescriptorFactory implements DocumentDescriptorFacto
 	{
 		try
 		{
-			return documentDescriptorsByWindowId.getOrLoad(AD_Window_ID, () -> new DefaultDocumentDescriptorLoader(AD_Window_ID).load());
+			return documentDescriptorsByWindowId.getOrLoad(AD_Window_ID, () -> {
+				final DocumentDescriptor descriptor = new DefaultDocumentDescriptorLoader(AD_Window_ID).load();
+
+				final String tableName = descriptor.getEntityDescriptor().getTableNameOrNull();
+				if (tableName != null)
+				{
+					entityDescriptorsByTableName.remove(tableName);
+				}
+
+				return descriptor;
+			});
 		}
 		catch (final Exception e)
 		{
 			throw DocumentLayoutBuildException.wrapIfNeeded(e);
 		}
+	}
+
+	private Set<DocumentEntityDescriptor> getEntityDescriptorsForTableName(final String tableName)
+	{
+		Check.assumeNotEmpty(tableName, "tableName is not empty");
+
+		return entityDescriptorsByTableName.getOrLoad(tableName, () -> documentDescriptorsByWindowId.values()
+				.stream()
+				.map(descriptor -> descriptor.getEntityDescriptor())
+				.filter(entityDescriptor -> Objects.equal(tableName, entityDescriptor.getTableNameOrNull()))
+				.collect(ImmutableSet.toImmutableSet()));
+	}
+
+	@Override
+	public List<DocumentPath> getDocumentPaths(final String tableName, final int recordIdInt)
+	{
+		final DocumentId recordId = DocumentId.of(recordIdInt);
+
+		return getEntityDescriptorsForTableName(tableName)
+				.stream()
+				.map(entityDescriptor -> DocumentPath.rootDocumentPath(entityDescriptor.getDocumentType(), entityDescriptor.getDocumentTypeId(), recordId))
+				.collect(ImmutableList.toImmutableList());
 	}
 }
