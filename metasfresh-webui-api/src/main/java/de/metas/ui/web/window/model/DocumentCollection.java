@@ -92,14 +92,14 @@ public class DocumentCollection
 		public void onReset(String tableName, int recordId)
 		{
 			getDocumentPaths(tableName, recordId)
-					.forEach(documentPath -> forDocumentReadonlyIfLoaded(documentPath, document -> document.refreshFromRepository()));
+					.forEach(documentPath -> invalidateDocumentByPath(documentPath));
 		}
 	};
 
 	/* package */ DocumentCollection()
 	{
 		super();
-		
+
 		CacheMgt.get().addCacheMgtListener(cacheMgtListener);
 	}
 
@@ -255,6 +255,11 @@ public class DocumentCollection
 			// Return the result
 			return result;
 		}
+	}
+
+	private final void invalidateDocumentByPath(final DocumentPath documentPath)
+	{
+		forDocumentReadonlyIfLoaded(documentPath, document -> document.refreshFromRepository());
 	}
 
 	/**
