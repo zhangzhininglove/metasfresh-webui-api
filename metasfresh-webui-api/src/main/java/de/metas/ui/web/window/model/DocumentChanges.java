@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableSet;
 
 import de.metas.ui.web.window.WindowConstants;
 import de.metas.ui.web.window.datatypes.DataTypes;
+import de.metas.ui.web.window.datatypes.DocumentId;
 import de.metas.ui.web.window.datatypes.DocumentPath;
 import de.metas.ui.web.window.descriptor.DetailId;
 import de.metas.ui.web.window.descriptor.DocumentFieldWidgetType;
@@ -47,22 +48,21 @@ import de.metas.ui.web.window.model.IDocumentChangesCollector.ReasonSupplier;
 public final class DocumentChanges
 {
 	private final DocumentPath documentPath;
+	private boolean inScope;
+
 	private final Map<String, DocumentFieldChange> fieldChangesByName = new LinkedHashMap<>();
 	private DocumentValidStatus documentValidStatus = null;
 	private DocumentSaveStatus documentSaveStatus = null;
+
 	private final Set<DetailId> staleDetailIds = new HashSet<>();
 
-	/* package */ DocumentChanges(final DocumentPath documentPath)
+	/* package */ DocumentChanges(final DocumentPath documentPath, final boolean inScope)
 	{
 		super();
 
 		Preconditions.checkNotNull(documentPath, "documentPath");
 		this.documentPath = documentPath;
-	}
-
-	public DocumentPath getDocumentPath()
-	{
-		return documentPath;
+		this.inScope = inScope;
 	}
 
 	@Override
@@ -71,9 +71,26 @@ public final class DocumentChanges
 		return MoreObjects.toStringHelper(this)
 				.omitNullValues()
 				.add("documentPath", documentPath)
-				.add("fields", fieldChangesByName.isEmpty() ? null : fieldChangesByName)
+				.add("inScope", inScope)
+				.add("fields.count", fieldChangesByName.isEmpty() ? null : fieldChangesByName.size())
 				.add("staleDetailIds", staleDetailIds.isEmpty() ? null : staleDetailIds)
 				.toString();
+	}
+
+	public DocumentPath getDocumentPath()
+	{
+		return documentPath;
+	}
+
+	public boolean isInScope()
+	{
+		return inScope;
+	}
+	
+	public DocumentChanges setInScope()
+	{
+		inScope = true;
+		return this;
 	}
 
 	public Set<String> getFieldNames()
@@ -89,13 +106,19 @@ public final class DocumentChanges
 				&& staleDetailIds.isEmpty();
 	}
 
+	private final void assertMatchingDocumentPath(final DocumentPath documentPath, final Object entity)
+	{
+		// Make sure the field is about same document path
+		if (!this.documentPath.equals(documentPath))
+		{
+			throw new IllegalArgumentException("Document path not matching for " + entity + ", expected " + this.documentPath + " but it was " + documentPath);
+		}
+	}
+
 	private DocumentFieldChange fieldChangesOf(final IDocumentFieldView documentField)
 	{
 		// Make sure the field is about same document path
-		if (!documentPath.equals(documentField.getDocumentPath()))
-		{
-			throw new IllegalArgumentException("Field " + documentField + " does not have expected path: " + documentPath);
-		}
+		assertMatchingDocumentPath(documentField.getDocumentPath(), documentField);
 
 		return fieldChangesByName.computeIfAbsent(documentField.getFieldName(), (fieldName) -> {
 			final DocumentFieldChange event = DocumentFieldChange.of(fieldName, documentField.isKey(), documentField.isPublicField(), documentField.isAdvancedField(), documentField.getWidgetType());
@@ -265,6 +288,14 @@ public final class DocumentChanges
 	{
 		Check.assumeNotNull(detailId, "Parameter detailId is not null");
 		staleDetailIds.add(detailId);
+	}
+	
+	/* package */void collectStaleIncludedDocument(final DetailId detailId, final DocumentId includedDocumentId)
+	{
+		Check.assumeNotNull(detailId, "Parameter detailId is not null");
+		staleDetailIds.add(detailId);
+		
+		// TODO: collect includedDocumentId that got staled
 	}
 
 	public Set<DetailId> getStaleDetailIds()

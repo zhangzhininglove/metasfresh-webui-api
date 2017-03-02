@@ -14,6 +14,7 @@ import com.google.common.base.Stopwatch;
 
 import de.metas.logging.LogManager;
 import de.metas.ui.web.exceptions.InvalidDocumentVersionException;
+import de.metas.ui.web.window.datatypes.DocumentPath;
 import de.metas.ui.web.window.model.DocumentChangesCollector;
 import de.metas.ui.web.window.model.IDocumentChangesCollector;
 import de.metas.ui.web.window.model.NullDocumentChangesCollector;
@@ -86,6 +87,11 @@ public class Execution implements IAutoCloseable
 		return new ExecutionBuilder()
 				.name(name)
 				.execute(callable);
+	}
+	
+	public static IAutoCloseable setScope(final DocumentPath documentPath)
+	{
+		return getCurrentDocumentChangesCollectorOrNull().setScope(documentPath);
 	}
 
 	public static IDocumentChangesCollector getCurrentDocumentChangesCollector()

@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.adempiere.ad.expression.api.LogicExpressionResult;
+import org.adempiere.util.lang.IAutoCloseable;
 
 import de.metas.ui.web.window.WindowConstants;
 import de.metas.ui.web.window.datatypes.DocumentPath;
@@ -33,6 +34,8 @@ import de.metas.ui.web.window.descriptor.DetailId;
 
 public interface IDocumentChangesCollector
 {
+	IAutoCloseable setScope(DocumentPath documentPath);
+	
 	Map<DocumentPath, DocumentChanges> getDocumentChangesByPath();
 
 	void collectValueChanged(IDocumentFieldView documentField, ReasonSupplier reason);

@@ -6,9 +6,14 @@ import java.util.Set;
 
 import org.adempiere.ad.expression.api.LogicExpressionResult;
 import org.adempiere.util.GuavaCollectors;
+import org.adempiere.util.lang.IAutoCloseable;
+import org.slf4j.Logger;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
 
+import de.metas.logging.LogManager;
 import de.metas.printing.esb.base.util.Check;
 import de.metas.ui.web.window.datatypes.DataTypes;
 import de.metas.ui.web.window.datatypes.DocumentPath;
@@ -43,6 +48,9 @@ public class DocumentChangesCollector implements IDocumentChangesCollector
 		return new DocumentChangesCollector();
 	}
 
+	private static final Logger logger = LogManager.getLogger(DocumentChangesCollector.class);
+
+	private DocumentPath scopeDocumentPath = null;
 	private final Map<DocumentPath, DocumentChanges> documentChangesByPath = new LinkedHashMap<>();
 
 	private DocumentChangesCollector()
@@ -58,6 +66,66 @@ public class DocumentChangesCollector implements IDocumentChangesCollector
 				.toString();
 	}
 
+	@Override
+	public IAutoCloseable setScope(final DocumentPath documentPath)
+	{
+		Preconditions.checkNotNull(documentPath);
+		
+		final DocumentPath scopeDocumentPathPrevious = scopeDocumentPath;
+		scopeDocumentPath = documentPath;
+		logger.debug("Scope changed to {}", scopeDocumentPath);
+		
+		//
+		// If there are changes already reported for the documentPath we are just setting in scope,
+		// flag those changes as in scope too
+		// Reason/Case: create a new included document... 
+		if (documentPath != null)
+		{
+			final DocumentChanges documentChanges = documentChangesIfExists(documentPath);
+			if(documentChanges != null)
+			{
+				documentChanges.setInScope();
+			}
+		}
+
+		return new IAutoCloseable()
+		{
+			private boolean restored = false;
+
+			@Override
+			public void close()
+			{
+				if (restored)
+				{
+					return;
+				}
+				restored = true;
+
+				final DocumentPath scopeDocumentPathCurrent = scopeDocumentPath;
+				if (!Objects.equal(scopeDocumentPathCurrent, documentPath))
+				{
+					logger.warn("Unexpected current documentPath in scope: expected={}, actual={}", documentPath, scopeDocumentPathCurrent);
+				}
+
+				scopeDocumentPath = scopeDocumentPathPrevious;
+				logger.debug("Scope restored to {}", scopeDocumentPathPrevious);
+			}
+		};
+	}
+
+	private final boolean isInScope(final DocumentPath documentPath)
+	{
+		final DocumentPath scopeDocumentPath = this.scopeDocumentPath;
+
+		// No scope restrictions
+		if (scopeDocumentPath == null)
+		{
+			return true;
+		}
+
+		return scopeDocumentPath.equals(documentPath);
+	}
+
 	private DocumentChanges documentChanges(final IDocumentFieldView documentField)
 	{
 		final DocumentPath documentPath = documentField.getDocumentPath();
@@ -66,7 +134,15 @@ public class DocumentChangesCollector implements IDocumentChangesCollector
 
 	private DocumentChanges documentChanges(final DocumentPath documentPath)
 	{
-		return documentChangesByPath.computeIfAbsent(documentPath, DocumentChanges::new);
+		final DocumentChanges documentChanges = documentChangesByPath.computeIfAbsent(documentPath, newDocumentPath -> new DocumentChanges(newDocumentPath, isInScope(newDocumentPath)));
+
+		if (documentPath.hasIncludedDocuments())
+		{
+			documentChanges(documentPath.getRootDocumentPath())
+					.collectStaleIncludedDocument(documentPath.getDetailId(), documentPath.getSingleRowId());
+		}
+
+		return documentChanges;
 	}
 
 	private DocumentChanges documentChangesIfExists(final DocumentPath documentPath)
@@ -214,26 +290,32 @@ public class DocumentChangesCollector implements IDocumentChangesCollector
 
 	private boolean isStaleDocumentChanges(final DocumentChanges documentChanges)
 	{
+		// The documentPath in scope shall never be considered as stale
+		if(documentChanges.isInScope())
+		{
+			return false; // not stale
+		}
+		
 		final DocumentPath documentPath = documentChanges.getDocumentPath();
 		if (!documentPath.isSingleIncludedDocument())
 		{
-			return false;
+			return false; // not stale
 		}
 
 		final DocumentPath rootDocumentPath = documentPath.getRootDocumentPath();
 		final DocumentChanges rootDocumentChanges = documentChangesIfExists(rootDocumentPath);
 		if (rootDocumentChanges == null)
 		{
-			return false;
+			return false; // not stale
 		}
 
 		final DetailId detailId = documentPath.getDetailId();
 		if (rootDocumentChanges.isDetailIdStaled(detailId))
 		{
-			return true;
+			return true; // stale
 		}
 
-		return false;
+		return false; // not stale
 	}
 
 	@Override

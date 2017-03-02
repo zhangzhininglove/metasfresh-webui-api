@@ -3,7 +3,11 @@ package de.metas.ui.web.window.model;
 import java.util.Map;
 import java.util.Set;
 
+import javax.annotation.concurrent.Immutable;
+
 import org.adempiere.ad.expression.api.LogicExpressionResult;
+import org.adempiere.util.lang.IAutoCloseable;
+import org.adempiere.util.lang.NullAutoCloseable;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -24,22 +28,32 @@ import de.metas.ui.web.window.descriptor.DetailId;
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public
- * License along with this program.  If not, see
+ * License along with this program. If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
  * #L%
  */
 
+@Immutable
 public final class NullDocumentChangesCollector implements IDocumentChangesCollector
 {
 	public static final transient NullDocumentChangesCollector instance = new NullDocumentChangesCollector();
 
+	// NOTE: no fields are allowed
+
 	private NullDocumentChangesCollector()
 	{
 		super();
+	}
+
+	@Override
+	public IAutoCloseable setScope(final DocumentPath documentPath)
+	{
+		// does nothing
+		return NullAutoCloseable.instance;
 	}
 
 	@Override

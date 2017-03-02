@@ -155,7 +155,8 @@ public class DocumentCollection
 			return null;
 		}
 
-		try (final IAutoCloseable readLock = rootDocumentForLocking.lockForReading())
+		try (final IAutoCloseable scope = Execution.setScope(documentPath);
+				final IAutoCloseable readLock = rootDocumentForLocking.lockForReading())
 		{
 			final Document rootDocument = rootDocumentSupplier.apply(rootDocumentKey);
 			if (documentPath.isRootDocument())
@@ -178,7 +179,8 @@ public class DocumentCollection
 	{
 		final DocumentKey rootDocumentKey = DocumentKey.ofRootDocumentPath(documentPath.getRootDocumentPath());
 
-		try (final IAutoCloseable readLock = rootDocuments.getUnchecked(rootDocumentKey).lockForReading())
+		try (final IAutoCloseable scope = Execution.setScope(documentPath);
+				final IAutoCloseable readLock = rootDocuments.getUnchecked(rootDocumentKey).lockForReading())
 		{
 			final Document rootDocument = rootDocuments.getUnchecked(rootDocumentKey);
 			return rootDocumentProcessor.apply(rootDocument);
@@ -204,7 +206,10 @@ public class DocumentCollection
 				document = rootDocument.getIncludedDocument(documentPath.getDetailId(), documentPath.getSingleRowId());
 			}
 
-			return documentProcessor.apply(document);
+			try (final IAutoCloseable scope = Execution.setScope(document.getDocumentPath()))
+			{
+				return documentProcessor.apply(document);
+			}
 		});
 	}
 
@@ -215,21 +220,25 @@ public class DocumentCollection
 		final Document lockHolder;
 		final boolean isNewRootDocument;
 		final DocumentKey rootDocumentKey;
+		final DocumentPath documentPath;
 		if (rootDocumentPathOrNew.isNewDocument())
 		{
 			final Document newRootDocument = createRootDocument(rootDocumentPathOrNew);
 			lockHolder = newRootDocument;
-			rootDocumentKey = DocumentKey.ofRootDocumentPath(newRootDocument.getDocumentPath());
+			documentPath = newRootDocument.getDocumentPath();
+			rootDocumentKey = DocumentKey.ofRootDocumentPath(documentPath);
 			isNewRootDocument = true;
 		}
 		else
 		{
+			documentPath = rootDocumentPathOrNew;
 			rootDocumentKey = DocumentKey.ofRootDocumentPath(rootDocumentPathOrNew);
 			lockHolder = rootDocuments.getUnchecked(rootDocumentKey);
 			isNewRootDocument = false;
 		}
 
-		try (final IAutoCloseable readLock = lockHolder.lockForWriting())
+		try (final IAutoCloseable scope = Execution.setScope(documentPath);
+				final IAutoCloseable readLock = lockHolder.lockForWriting())
 		{
 			final Document rootDocument;
 			if (isNewRootDocument)
