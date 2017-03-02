@@ -702,13 +702,13 @@ public final class Document
 		{
 			return;
 		}
-		
+
 		if (!isWritable())
 		{
 			throw new InvalidDocumentStateException(this, "not a writable copy");
 		}
 
-		if(isDeleted())
+		if (isDeleted())
 		{
 			throw new DocumentNotFoundException(getDocumentPath());
 		}
@@ -1643,6 +1643,12 @@ public final class Document
 		return _staleStatus.isStaled();
 	}
 
+	/* package */void markStaled()
+	{
+		_staleStatus.markStaled();
+		// includedDocuments.values().forEach(includedDocumentsForDetail -> includedDocumentsForDetail.markStaleAll());
+	}
+
 	public IAutoCloseable lockForReading()
 	{
 		// assume _lock is not null
@@ -1723,6 +1729,11 @@ public final class Document
 
 			staled = true;
 			return true;
+		}
+
+		private void markStaled()
+		{
+			staled = true;
 		}
 
 		private void markNotStaled(final String version)

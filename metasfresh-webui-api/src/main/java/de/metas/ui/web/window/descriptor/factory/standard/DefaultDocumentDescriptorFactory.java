@@ -2,6 +2,7 @@ package de.metas.ui.web.window.descriptor.factory.standard;
 
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.adempiere.util.Check;
 import org.compiere.model.I_AD_Window;
@@ -14,6 +15,7 @@ import com.google.common.collect.ImmutableSet;
 
 import de.metas.ui.web.window.datatypes.DocumentId;
 import de.metas.ui.web.window.datatypes.DocumentPath;
+import de.metas.ui.web.window.datatypes.DocumentType;
 import de.metas.ui.web.window.descriptor.DocumentDescriptor;
 import de.metas.ui.web.window.descriptor.DocumentEntityDescriptor;
 import de.metas.ui.web.window.descriptor.factory.DocumentDescriptorFactory;
@@ -87,13 +89,26 @@ public class DefaultDocumentDescriptorFactory implements DocumentDescriptorFacto
 	}
 
 	@Override
-	public List<DocumentPath> getDocumentPaths(final String tableName, final int recordIdInt)
+	public List<DocumentPath> getDocumentPaths(final String tableName, final int documentIdInt, final String includedTableName, final int includedDocumentIdInt)
 	{
-		final DocumentId recordId = DocumentId.of(recordIdInt);
+		final DocumentId documentId = DocumentId.of(documentIdInt);
 
 		return getEntityDescriptorsForTableName(tableName)
 				.stream()
-				.map(entityDescriptor -> DocumentPath.rootDocumentPath(entityDescriptor.getDocumentType(), entityDescriptor.getDocumentTypeId(), recordId))
+				.flatMap(entityDescriptor -> {
+					final DocumentType documentType = entityDescriptor.getDocumentType();
+					final DocumentId documentTypeId = entityDescriptor.getDocumentTypeId();
+					if (includedTableName == null)
+					{
+						return Stream.of(DocumentPath.rootDocumentPath(documentType, documentTypeId, documentId));
+					}
+					else
+					{
+						final DocumentId rowId = DocumentId.of(includedDocumentIdInt);
+						return entityDescriptor.getIncludedEntitiesByTableName(includedTableName)
+								.map(includedEntityDescriptor -> DocumentPath.includedDocumentPath(documentType, documentTypeId, documentId, includedEntityDescriptor.getDetailId(), rowId));
+					}
+				})
 				.collect(ImmutableList.toImmutableList());
 	}
 }

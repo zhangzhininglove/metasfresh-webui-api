@@ -9,6 +9,7 @@ import java.util.function.Function;
 import org.adempiere.util.Check;
 import org.adempiere.util.lang.IAutoCloseable;
 import org.adempiere.util.lang.impl.TableRecordReference;
+import org.compiere.util.CacheInvalidateRequest;
 import org.compiere.util.CacheMgt;
 import org.compiere.util.CacheMgtListener;
 import org.slf4j.Logger;
@@ -86,12 +87,17 @@ public class DocumentCollection
 
 			});
 
-	private CacheMgtListener cacheMgtListener = new CacheMgtListener()
+	private final CacheMgtListener cacheMgtListener = new CacheMgtListener()
 	{
 		@Override
-		public void onReset(String tableName, int recordId)
+		public void onReset(final CacheInvalidateRequest request)
 		{
-			getDocumentPaths(tableName, recordId)
+			final String tableName = request.getTableName();
+			final int documentId = request.getRecordId();
+			final boolean hasChild = request.hasChild();
+			final String includedTableName = hasChild ? request.getChildTableName() : null;
+			final int includedDocumentIdInt = hasChild ? request.getChildRecordId() : -1;
+			getDocumentPaths(tableName, documentId, includedTableName, includedDocumentIdInt)
 					.forEach(documentPath -> invalidateDocumentByPath(documentPath));
 		}
 	};
@@ -259,7 +265,12 @@ public class DocumentCollection
 
 	private final void invalidateDocumentByPath(final DocumentPath documentPath)
 	{
-		forDocumentReadonlyIfLoaded(documentPath, document -> document.refreshFromRepository());
+		forDocumentReadonlyIfLoaded(documentPath, document -> {
+			document.markStaled();
+
+			// TODO: if it's in current scope, shall we also refresh it???
+			document.refreshFromRepositoryIfStaled();
+		});
 	}
 
 	/**
@@ -391,9 +402,9 @@ public class DocumentCollection
 		return documentDescriptorFactory.getTableRecordReference(documentPath);
 	}
 
-	public List<DocumentPath> getDocumentPaths(final String tableName, final int recordIdInt)
+	public List<DocumentPath> getDocumentPaths(final String tableName, final int recordIdInt, final String includedTableName, final int includedDocumentIdInt)
 	{
-		return documentDescriptorFactory.getDocumentPaths(tableName, recordIdInt);
+		return documentDescriptorFactory.getDocumentPaths(tableName, recordIdInt, includedTableName, includedDocumentIdInt);
 	}
 
 	public DocumentAttachments getDocumentAttachments(final DocumentPath documentPath)

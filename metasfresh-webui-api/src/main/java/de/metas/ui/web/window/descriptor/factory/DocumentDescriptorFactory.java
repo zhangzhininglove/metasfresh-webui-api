@@ -36,19 +36,19 @@ public interface DocumentDescriptorFactory
 {
 	DocumentDescriptor getDocumentDescriptor(int AD_Window_ID) throws DocumentLayoutBuildException;
 
-	default DocumentEntityDescriptor getDocumentEntityDescriptor(final int AD_Window_ID)
+	default DocumentEntityDescriptor getDocumentEntityDescriptor(int AD_Window_ID)
 	{
 		return getDocumentDescriptor(AD_Window_ID).getEntityDescriptor();
 	}
 
-	default String getTableNameOrNull(final int AD_Window_ID)
+	default String getTableNameOrNull(int AD_Window_ID)
 	{
 		return getDocumentEntityDescriptor(AD_Window_ID).getTableName();
 	}
 
-	default String getTableNameOrNull(final int AD_Window_ID, final DetailId detailId)
+	default String getTableNameOrNull(int AD_Window_ID, DetailId detailId)
 	{
-		final DocumentEntityDescriptor descriptor = getDocumentEntityDescriptor(AD_Window_ID);
+		DocumentEntityDescriptor descriptor = getDocumentEntityDescriptor(AD_Window_ID);
 		if (detailId == null)
 		{
 			return descriptor.getTableName();
@@ -59,23 +59,23 @@ public interface DocumentDescriptorFactory
 		}
 	}
 	
-	default TableRecordReference getTableRecordReference(final DocumentPath documentPath)
+	default TableRecordReference getTableRecordReference(DocumentPath documentPath)
 	{
-		final DocumentEntityDescriptor rootEntityDescriptor = getDocumentEntityDescriptor(documentPath.getAD_Window_ID());
+		DocumentEntityDescriptor rootEntityDescriptor = getDocumentEntityDescriptor(documentPath.getAD_Window_ID());
 
 		if (documentPath.isRootDocument())
 		{
-			final String tableName = rootEntityDescriptor.getTableName();
-			final int recordId = documentPath.getDocumentId().toInt();
+			String tableName = rootEntityDescriptor.getTableName();
+			int recordId = documentPath.getDocumentId().toInt();
 			return TableRecordReference.of(tableName, recordId);
 		}
 
-		final DocumentEntityDescriptor includedEntityDescriptor = rootEntityDescriptor.getIncludedEntityByDetailId(documentPath.getDetailId());
-		final String tableName = includedEntityDescriptor.getTableName();
-		final int recordId = documentPath.getSingleRowId().toInt();
+		DocumentEntityDescriptor includedEntityDescriptor = rootEntityDescriptor.getIncludedEntityByDetailId(documentPath.getDetailId());
+		String tableName = includedEntityDescriptor.getTableName();
+		int recordId = documentPath.getSingleRowId().toInt();
 		return TableRecordReference.of(tableName, recordId);
 	}
 
-	List<DocumentPath> getDocumentPaths(String tableName, int recordIdInt);
+	List<DocumentPath> getDocumentPaths(String tableName, int documentIdInt, String includedTableName, int includedDocumentIdInt);
 
 }
