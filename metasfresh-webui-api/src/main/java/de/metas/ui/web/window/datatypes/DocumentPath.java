@@ -136,6 +136,17 @@ public final class DocumentPath
 				.setRowId(rowIdStr)
 				.build();
 	}
+	
+	public static DocumentPath includedDocumentPath(DocumentType documentType, DocumentId documentTypeId, DocumentId documentId, DetailId detailId, DocumentId rowId)
+	{
+		return builder()
+				.setDocumentType(documentType, documentTypeId)
+				.setDocumentId(documentId)
+				.setDetailId(detailId)
+				.setRowId(rowId)
+				.build();
+	}
+
 
 	public static final DocumentPath includedDocumentPath(final DocumentType documentType, final int documentTypeId, final String idStr, final String detailId)
 	{
@@ -553,8 +564,18 @@ public final class DocumentPath
 				throw new IllegalArgumentException("Invalid document type ID: " + documentTypeIdInt);
 			}
 
-			this.documentType = DocumentType.Window;
+			this.documentType = documentType;
 			documentTypeId = DocumentId.of(documentTypeIdInt);
+			return this;
+		}
+
+		public Builder setDocumentType(final DocumentType documentType, final DocumentId documentTypeId)
+		{
+			Preconditions.checkNotNull(documentType, "documentType not null");
+			Preconditions.checkNotNull(documentTypeId, "documentTypeId not null");
+			
+			this.documentType = documentType;
+			this.documentTypeId = documentTypeId;
 			return this;
 		}
 
@@ -563,6 +584,13 @@ public final class DocumentPath
 			documentId = DocumentId.fromNullable(documentIdStr);
 			return this;
 		}
+		
+		public Builder setDocumentId(final DocumentId documentId)
+		{
+			this.documentId = documentId;
+			return this;
+		}
+
 
 		public Builder allowNewDocumentId()
 		{
@@ -575,6 +603,13 @@ public final class DocumentPath
 			detailId = DetailId.fromJson(detailIdStr);
 			return this;
 		}
+		
+		public Builder setDetailId(final DetailId detailId)
+		{
+			this.detailId = detailId;
+			return this;
+		}
+
 
 		public Builder setRowId(final String rowIdStr)
 		{
