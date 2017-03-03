@@ -1,5 +1,6 @@
 package de.metas.ui.web.dashboard;
 
+import org.elasticsearch.client.Client;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -48,6 +49,8 @@ public class DashboardRestController
 	private UserSession userSession;
 	@Autowired
 	private UserDashboardRepository userDashboardRepo;
+	@Autowired
+	private Client elasticsearchClient;
 
 	private JSONOptions newJSONOpts()
 	{
@@ -72,16 +75,23 @@ public class DashboardRestController
 	}
 
 	@GetMapping("/kpis/{itemId}/data")
-	public KPIData getKPIData( //
+	public KPIDataResult getKPIData( //
 			@PathVariable final int itemId //
 			, @RequestParam(name = "fromMillis", required = false, defaultValue = "0") @ApiParam("interval rage start, in case of temporal data") final long fromMillis //
 			, @RequestParam(name = "toMillis", required = false, defaultValue = "0") @ApiParam("interval rage end, in case of temporal data") final long toMillis //
+			, @RequestParam(name = "prettyValues", required = false, defaultValue = "true") @ApiParam("if true, the server will format the values") final boolean prettyValues //
 	)
 	{
-		return userDashboardRepo.getUserDashboard()
+		userSession.assertLoggedIn();
+
+		final KPI kpi = userDashboardRepo.getUserDashboard()
 				.getKPIItemById(itemId)
-				.getKPI()
-				.retrieveData(fromMillis, toMillis)
+				.getKPI();
+		
+		return KPIDataLoader.newInstance(elasticsearchClient, kpi)
+				.setTimeRange(fromMillis, toMillis)
+				.setFormatValues(prettyValues)
+				.retrieveData()
 				.setItemId(itemId);
 	}
 
@@ -95,16 +105,21 @@ public class DashboardRestController
 	}
 
 	@GetMapping("/targetIndicators/{itemId}/data")
-	public KPIData getTargetIndicatorData( //
+	public KPIDataResult getTargetIndicatorData( //
 			@PathVariable final int itemId //
 			, @RequestParam(name = "fromMillis", required = false, defaultValue = "0") @ApiParam("interval rage start, in case of temporal data") final long fromMillis //
 			, @RequestParam(name = "toMillis", required = false, defaultValue = "0") @ApiParam("interval rage end, in case of temporal data") final long toMillis //
 	)
 	{
-		return userDashboardRepo.getUserDashboard()
+		userSession.assertLoggedIn();
+
+		final KPI kpi = userDashboardRepo.getUserDashboard()
 				.getTargetIndicatorItemById(itemId)
-				.getKPI()
-				.retrieveData(fromMillis, toMillis)
+				.getKPI();
+		
+		return KPIDataLoader.newInstance(elasticsearchClient, kpi)
+				.setTimeRange(fromMillis, toMillis)
+				.retrieveData()
 				.setItemId(itemId);
 	}
 }

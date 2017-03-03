@@ -1,6 +1,8 @@
-package de.metas.ui.web.dashboard;
+package de.metas.ui.web.handlingunits.process;
 
-import org.compiere.util.DisplayType;
+import de.metas.ui.web.handlingunits.HUDocumentView;
+import de.metas.ui.web.handlingunits.HUDocumentViewSelection;
+import de.metas.ui.web.process.ViewBasedProcessTemplate;
 
 /*
  * #%L
@@ -12,57 +14,35 @@ import org.compiere.util.DisplayType;
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 2 of the
  * License, or (at your option) any later version.
- *
+ * 
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU General Public
  * License along with this program. If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
  * #L%
  */
 
-public enum KPIFieldValueType
+/**
+ * A {@link ViewBasedProcessTemplate} implementation template which add convenient functionalities around {@link HUDocumentViewSelection}.
+ * 
+ * @author metas-dev <dev@metasfresh.com>
+ *
+ */
+public abstract class HUViewProcessTemplate extends ViewBasedProcessTemplate
 {
-	String //
-	, Number //
-	, Date //
-	, DateTime //
-	;
-
-	public static KPIFieldValueType fromDisplayType(final int displayType)
+	@Override
+	protected final HUDocumentViewSelection getView()
 	{
-		if (DisplayType.isText(displayType))
-		{
-			return String;
-		}
-		else if (DisplayType.isNumeric(displayType))
-		{
-			return Number;
-		}
-		else if (displayType == DisplayType.Date)
-		{
-			return Date;
-		}
-		else if (displayType == DisplayType.DateTime)
-		{
-			return DateTime;
-		}
-		else
-		{
-			throw new IllegalArgumentException("Display type not supported: " + DisplayType.getDescription(displayType));
-		}
+		return super.getView(HUDocumentViewSelection.class);
 	}
 
-	public String toJson()
+	@Override
+	protected final HUDocumentView getSingleSelectedRow()
 	{
-		return name();
-	}
-
-	public boolean isDate()
-	{
-		return this == Date || this == DateTime;
+		return HUDocumentView.cast(super.getSingleSelectedRow());
 	}
 }
