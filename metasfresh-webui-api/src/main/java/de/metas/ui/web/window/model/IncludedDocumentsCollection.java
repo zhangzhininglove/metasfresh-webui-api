@@ -169,7 +169,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	}
 
 	@Override
-	public synchronized Document getDocumentById(final DocumentId documentId)
+	public Document getDocumentById(final DocumentId documentId)
 	{
 		if (documentId == null || documentId.isNew())
 		{
@@ -241,7 +241,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	}
 
 	@Override
-	public synchronized List<Document> getDocuments()
+	public List<Document> getDocuments()
 	{
 		return ImmutableList.copyOf(getInnerDocumentsFullyLoaded());
 	}
@@ -289,7 +289,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	}
 
 	@Override
-	public synchronized Document createNewDocument()
+	public Document createNewDocument()
 	{
 		assertWritable();
 		assertNewDocumentAllowed();
@@ -459,7 +459,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	}
 
 	@Override
-	public synchronized void deleteDocuments(final Set<DocumentId> documentIds)
+	public void deleteDocuments(final Set<DocumentId> documentIds)
 	{
 		if (documentIds == null || documentIds.isEmpty())
 		{
