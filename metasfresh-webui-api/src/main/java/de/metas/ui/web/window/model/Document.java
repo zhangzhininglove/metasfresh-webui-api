@@ -4,7 +4,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -97,7 +96,6 @@ public final class Document
 	private static final ReasonSupplier REASON_Value_DirectSetOnDocument = () -> "direct set on Document";
 	private static final ReasonSupplier REASON_Value_NewDocument = () -> "new document";
 	private static final ReasonSupplier REASON_Value_Refreshing = () -> "direct set on Document (refresh)";
-	private static final ReasonSupplier REASON_Value_ParentLinkUpdateOnSave = () -> "parent link update on save";
 
 	//
 	// Descriptors & paths
@@ -113,7 +111,7 @@ public final class Document
 	private boolean _initializing = false;
 	private DocumentValidStatus _valid = DocumentValidStatus.documentInitiallyInvalid();
 	private DocumentSaveStatus _saveStatus = DocumentSaveStatus.unknown();
-	private final DocumentStaleState _staleStatus;
+	private final DocumentRepositoryStatus _repoStatus;
 	private final ReentrantReadWriteLock _lock;
 
 	//
@@ -131,7 +129,7 @@ public final class Document
 	//
 	// Parent & children
 	private final Document _parentDocument;
-	private final Map<DetailId, IIncludedDocumentsCollection> includedDocuments;
+	private final Map<DetailId, IIncludedDocumentsCollection> _includedDocuments;
 
 	//
 	// Evaluatee
@@ -167,7 +165,7 @@ public final class Document
 		_writable = builder.isWritable();
 		_new = builder.isNewDocument();
 		_deleted = false;
-		_staleStatus = new DocumentStaleState();
+		_repoStatus = builder.createRepositoryStatus();
 		_lock = builder.createLock();
 
 		//
@@ -209,7 +207,7 @@ public final class Document
 				final IIncludedDocumentsCollection includedDocumentsForDetailId = includedEntityDescriptor.createIncludedDocumentsCollection(this);
 				includedDocuments.put(detailId, includedDocumentsForDetailId);
 			}
-			this.includedDocuments = includedDocuments.build();
+			this._includedDocuments = includedDocuments.build();
 		}
 
 		//
@@ -257,7 +255,7 @@ public final class Document
 		_deleted = from._deleted;
 		_valid = from._valid;
 		_saveStatus = from._saveStatus;
-		_staleStatus = new DocumentStaleState(from._staleStatus);
+		_repoStatus = from._repoStatus.copy();
 		_lock = from._lock; // always share the same lock
 
 		if (from._parentDocument != null)
@@ -303,7 +301,7 @@ public final class Document
 		// Copy included documents containers
 		{
 			final ImmutableMap.Builder<DetailId, IIncludedDocumentsCollection> includedDocuments = ImmutableMap.builder();
-			for (final Map.Entry<DetailId, IIncludedDocumentsCollection> e : from.includedDocuments.entrySet())
+			for (final Map.Entry<DetailId, IIncludedDocumentsCollection> e : from._includedDocuments.entrySet())
 			{
 				final DetailId detailId = e.getKey();
 				final IIncludedDocumentsCollection includedDocumentsForDetailIdOrig = e.getValue();
@@ -311,7 +309,7 @@ public final class Document
 
 				includedDocuments.put(detailId, includedDocumentsForDetailIdCopy);
 			}
-			this.includedDocuments = includedDocuments.build();
+			this._includedDocuments = includedDocuments.build();
 		}
 
 		//
@@ -393,7 +391,7 @@ public final class Document
 
 			//
 			updateValidIfStaled();
-			getStale().markNotStaled(documentValuesSupplier.getVersion());
+			repoStatus().markNotStaled(documentValuesSupplier.getVersion());
 
 		}
 		finally
@@ -606,6 +604,10 @@ public final class Document
 				{
 					return parentDocumentId.toInt();
 				}
+				else
+				{
+					logger.warn("Cannot initialize {} because parentDocumentId was not provided", fieldDescriptor);
+				}
 			}
 
 			//
@@ -753,6 +755,11 @@ public final class Document
 		return documentPath;
 	}
 
+	private final DetailId getDetailId()
+	{
+		return documentPath.getDetailId();
+	}
+
 	public Properties getCtx()
 	{
 		return Env.getCtx(); // FIXME use document level context
@@ -825,6 +832,17 @@ public final class Document
 		}
 
 		return parent;
+	}
+	
+	/** @return the "included documents collection" where this document is included or null if this is a root document */ 
+	private final IIncludedDocumentsCollection getParentIncludedDocumentsCollection()
+	{
+		final Document parentDocument = getParentDocument();
+		if(parentDocument == null)
+		{
+			return null;
+		}
+		return parentDocument.getIncludedDocumentsCollection(getDetailId());
 	}
 
 	private Collection<IDocumentField> getFields()
@@ -1066,7 +1084,7 @@ public final class Document
 		// Refresh it
 		// and also mark all included documents as stale because it might be that processing add/removed/changed some data in included documents too
 		refreshFromRepository();
-		for (final IIncludedDocumentsCollection includedDocumentsPerDetail : includedDocuments.values())
+		for (final IIncludedDocumentsCollection includedDocumentsPerDetail : _includedDocuments.values())
 		{
 			includedDocumentsPerDetail.markStaleAll();
 		}
@@ -1301,12 +1319,17 @@ public final class Document
 	/* package */IIncludedDocumentsCollection getIncludedDocumentsCollection(final DetailId detailId)
 	{
 		Check.assumeNotNull(detailId, "Parameter detailId is not null");
-		final IIncludedDocumentsCollection includedDocumentsForDetailId = includedDocuments.get(detailId);
+		final IIncludedDocumentsCollection includedDocumentsForDetailId = _includedDocuments.get(detailId);
 		if (includedDocumentsForDetailId == null)
 		{
 			throw new IllegalArgumentException("detailId '" + detailId + "' not found for " + this);
 		}
 		return includedDocumentsForDetailId;
+	}
+	
+	private Collection<IIncludedDocumentsCollection> getIncludedDocumentsCollections()
+	{
+		return _includedDocuments.values();
 	}
 
 	/* package */ Document createIncludedDocument(final DetailId detailId)
@@ -1442,7 +1465,7 @@ public final class Document
 
 		//
 		// Check included documents
-		for (final IIncludedDocumentsCollection includedDocumentsPerDetailId : includedDocuments.values())
+		for (final IIncludedDocumentsCollection includedDocumentsPerDetailId : getIncludedDocumentsCollections())
 		{
 			final DocumentValidStatus validState = includedDocumentsPerDetailId.checkAndGetValidStatus();
 			if (!validState.isValid())
@@ -1512,7 +1535,7 @@ public final class Document
 
 		//
 		// Check included documents
-		for (final IIncludedDocumentsCollection includedDocumentsPerDetailId : includedDocuments.values())
+		for (final IIncludedDocumentsCollection includedDocumentsPerDetailId : getIncludedDocumentsCollections())
 		{
 			if (includedDocumentsPerDetailId.hasChangesRecursivelly())
 			{
@@ -1526,18 +1549,6 @@ public final class Document
 
 	public DocumentSaveStatus saveIfValidAndHasChanges()
 	{
-		//
-		// Update parent link field
-		// TODO: i think this is no longer needed since we preallocate the IDs
-		if (parentLinkField != null)
-		{
-			final Document parentDocument = getParentDocument();
-			if (parentDocument != null)
-			{
-				setValue(parentLinkField, parentDocument.getDocumentIdAsInt(), REASON_Value_ParentLinkUpdateOnSave);
-			}
-		}
-
 		//
 		// Check if valid for saving
 		final DocumentValidStatus validState = checkAndGetValidStatus();
@@ -1570,8 +1581,22 @@ public final class Document
 		// Save this document
 		if (hasChanges())
 		{
+			//
+			// Actually save it to repository
 			getDocumentRepository().save(this);
+
+			//
+			// Notify the included documents collection that this document was been saved
+			final IIncludedDocumentsCollection parentIncludedDocumentsCollection = getParentIncludedDocumentsCollection();
+			if(parentIncludedDocumentsCollection != null)
+			{
+				parentIncludedDocumentsCollection.onDocumentSaved(this);
+			}
+
+			//
+			// Notify the document level callouts
 			documentCallout.onSave(asCalloutRecord());
+			
 			logger.debug("Document saved: {}", this);
 		}
 		else
@@ -1584,7 +1609,7 @@ public final class Document
 
 		//
 		// Try also saving the included documents
-		for (final IIncludedDocumentsCollection includedDocumentsForDetailId : includedDocuments.values())
+		for (final IIncludedDocumentsCollection includedDocumentsForDetailId : getIncludedDocumentsCollections())
 		{
 			includedDocumentsForDetailId.saveIfHasChanges();
 
@@ -1614,7 +1639,7 @@ public final class Document
 	{
 		if (getEntityDescriptor().getDataBinding().isVersioningSupported())
 		{
-			if (getStale().checkStaled())
+			if (repoStatus().checkStaled(this))
 			{
 				refreshFromRepository();
 			}
@@ -1631,20 +1656,20 @@ public final class Document
 		}
 		return _calloutRecord;
 	}
-
-	private DocumentStaleState getStale()
+	
+	private DocumentRepositoryStatus repoStatus()
 	{
-		return _staleStatus;
+		return _repoStatus;
 	}
 
 	/* package */boolean isStaled()
 	{
-		return _staleStatus.isStaled();
+		return repoStatus().isStaled();
 	}
 
 	/* package */void markStaled()
 	{
-		_staleStatus.markStaled();
+		repoStatus().markStaled();
 		// includedDocuments.values().forEach(includedDocumentsForDetail -> includedDocumentsForDetail.markStaleAll());
 	}
 
@@ -1674,72 +1699,6 @@ public final class Document
 			writeLock.unlock();
 			logger.debug("Released write lock for {}: {}", this, writeLock);
 		};
-	}
-
-	private final class DocumentStaleState
-	{
-		private boolean staled;
-		private String version;
-
-		private DocumentStaleState()
-		{
-			staled = false; // initially not staled
-			version = null; // unknown
-		}
-
-		private DocumentStaleState(final DocumentStaleState from)
-		{
-			staled = from.staled;
-			version = from.version;
-		}
-
-		@Override
-		public String toString()
-		{
-			return MoreObjects.toStringHelper(this)
-					.add("staled", staled)
-					.add("version", version)
-					.add("document", Document.this)
-					.toString();
-		}
-
-		public boolean isStaled()
-		{
-			return staled;
-		}
-
-		private boolean checkStaled()
-		{
-			if (staled)
-			{
-				return true;
-			}
-
-			if (isNew())
-			{
-				return false;
-			}
-
-			final String versionNow = getDocumentRepository().retrieveVersion(getEntityDescriptor(), getDocumentIdAsInt());
-			if (Objects.equals(version, versionNow))
-			{
-				return false;
-			}
-
-			staled = true;
-			return true;
-		}
-
-		private void markStaled()
-		{
-			staled = true;
-		}
-
-		private void markNotStaled(final String version)
-		{
-			staled = false;
-			this.version = version;
-		}
 	}
 
 	//
@@ -1861,6 +1820,12 @@ public final class Document
 
 			return build();
 		}
+		
+		private DocumentRepositoryStatus createRepositoryStatus()
+		{
+			final DocumentsRepository documentsRepository = getEntityDescriptor().getDataBinding().getDocumentsRepository();
+			return new DocumentRepositoryStatus(documentsRepository);
+		}
 
 		private Document getParentDocument()
 		{
@@ -1931,6 +1896,5 @@ public final class Document
 				return null;
 			}
 		}
-
 	}
 }

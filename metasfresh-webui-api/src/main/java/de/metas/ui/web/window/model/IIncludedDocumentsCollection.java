@@ -51,4 +51,8 @@ public interface IIncludedDocumentsCollection
 	void markStaleAll();
 
 	int getNextLineNo();
+
+	default void onDocumentSaved(final Document document)
+	{
+	}
 }

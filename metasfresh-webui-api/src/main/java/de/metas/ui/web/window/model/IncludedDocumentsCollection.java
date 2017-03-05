@@ -1,11 +1,8 @@
 package de.metas.ui.web.window.model;
 
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.adempiere.ad.expression.api.IExpressionEvaluator.OnVariableNotFound;
@@ -16,7 +13,6 @@ import org.slf4j.Logger;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
 
 import de.metas.logging.LogManager;
 import de.metas.ui.web.window.WindowConstants;
@@ -61,11 +57,10 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	private final DocumentEntityDescriptor entityDescriptor;
 	private final Document parentDocument;
 
-	private final LinkedHashMap<DocumentId, Document> _documents;
+	private final DocumentsCache documentsCache;
 
 	// State
 	private boolean _fullyLoaded;
-	private final Set<DocumentId> _staleDocumentIds;
 
 	public IncludedDocumentsCollection(final Document parentDocument, final DocumentEntityDescriptor entityDescriptor)
 	{
@@ -74,10 +69,9 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 
 		// State
 		_fullyLoaded = false;
-		_staleDocumentIds = new HashSet<>();
 
 		// Documents map
-		_documents = new LinkedHashMap<>();
+		documentsCache = new DocumentsCache();
 	}
 
 	/** copy constructor */
@@ -88,10 +82,9 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 
 		// State
 		_fullyLoaded = from._fullyLoaded;
-		_staleDocumentIds = new HashSet<>(from._staleDocumentIds);
 
 		// Deep-copy documents map
-		_documents = new LinkedHashMap<>(Maps.transformValues(from._documents, includedDocumentOrig -> includedDocumentOrig.copy(parentDocumentCopy, copyMode)));
+		documentsCache = from.documentsCache.copy(document -> document.copy(parentDocumentCopy, copyMode));
 	}
 
 	@Override
@@ -100,7 +93,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 		// NOTE: keep it short
 		return MoreObjects.toStringHelper(this)
 				.add("detailId", entityDescriptor.getDetailId())
-				.add("documentsCount", _documents.size())
+				.add("documentsCache.size", documentsCache.size())
 				.toString();
 	}
 
@@ -124,52 +117,23 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 		_fullyLoaded = false;
 	}
 
-	private final boolean isStale()
-	{
-		return !_staleDocumentIds.isEmpty();
-	}
-
-	private final boolean isStale(final DocumentId documentId)
-	{
-		if (_staleDocumentIds.contains(documentId))
-		{
-			return true;
-		}
-
-		return false;
-	}
-
-	private final void markNotStale()
-	{
-		_staleDocumentIds.clear();
-	}
-
-	private final void markNotStale(final DocumentId documentId)
-	{
-		if (documentId == null)
-		{
-			throw new NullPointerException("documentId cannot be null");
-		}
-		_staleDocumentIds.remove(documentId);
-	}
-
 	@Override
 	public final void markStaleAll()
 	{
 		markNotFullyLoaded();
-		_staleDocumentIds.addAll(_documents.keySet());
+		documentsCache.markAllStale();
 
 		Execution.getCurrentDocumentChangesCollectorOrNull()
 				.collectStaleDetailId(parentDocument.getDocumentPath(), getDetailId());
 	}
 
-	public DetailId getDetailId()
+	private final DetailId getDetailId()
 	{
 		return entityDescriptor.getDetailId();
 	}
 
 	@Override
-	public Document getDocumentById(final DocumentId documentId)
+	public final Document getDocumentById(final DocumentId documentId)
 	{
 		if (documentId == null || documentId.isNew())
 		{
@@ -178,7 +142,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 
 		//
 		// Check loaded collection
-		final Document documentExisting = _documents.get(documentId);
+		final Document documentExisting = documentsCache.getById(documentId);
 		if (documentExisting != null)
 		{
 			refreshStaleDocumentIfPossible(documentExisting);
@@ -188,7 +152,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 		{
 			if (logger.isTraceEnabled())
 			{
-				logger.trace("No document with id '{}' was found in local documents. \nAvailable IDs are: {}", documentId, _documents.keySet());
+				logger.trace("No document with id '{}' was found in local documents. \nAvailable IDs are: {}", documentId, documentsCache.getDocumentIds());
 			}
 		}
 
@@ -209,9 +173,8 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 
 		//
 		// Put the document to our documents map
-		// and update the status
-		_documents.put(documentId, documentNew);
-		markNotStale(documentId);
+		documentsCache.put(documentNew);
+		
 		// FullyLoaded: we just loaded and added a document to our collection
 		// => for sure this was/is not fully loaded
 		markNotFullyLoaded();
@@ -223,11 +186,11 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	private void refreshStaleDocumentIfPossible(final Document document)
 	{
 		final DocumentId documentId = document.getDocumentId();
-		if (isStale(documentId))
+		if(documentsCache.isStale())
 		{
 			logger.trace("Found stale document with id '{}' in local documents. We need to reload it.");
 			document.refreshFromRepository();
-			markNotStale(documentId);
+			documentsCache.markNotStale(documentId);
 		}
 		else
 		{
@@ -236,7 +199,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 
 		if (!document.isStaled())
 		{
-			markNotStale(documentId);
+			documentsCache.markNotStale(documentId);
 		}
 	}
 
@@ -251,7 +214,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	 */
 	private final Collection<Document> getInnerDocumentsNoLoad()
 	{
-		return _documents.values();
+		return documentsCache.getDocuments();
 	}
 
 	/**
@@ -259,7 +222,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	 */
 	private final Collection<Document> getInnerDocumentsFullyLoaded()
 	{
-		if (isStale() || !isFullyLoaded())
+		if (documentsCache.isStale() || !isFullyLoaded())
 		{
 			loadAll();
 			return getInnerDocumentsNoLoad();
@@ -297,8 +260,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 		final DocumentsRepository documentsRepository = entityDescriptor.getDataBinding().getDocumentsRepository();
 		final Document document = documentsRepository.createNewDocument(entityDescriptor, parentDocument);
 
-		final DocumentId documentId = document.getDocumentId();
-		_documents.put(documentId, document);
+		documentsCache.put(document);
 
 		return document;
 	}
@@ -321,13 +283,13 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 		{
 			return LOGICRESULT_FALSE_ParentDocumentProcessed;
 		}
-		
-		if(parentDocument.isNew())
+
+		if (parentDocument.isNew())
 		{
 			return LogicExpressionResult.namedConstant("ParentDocumentNew", false);
 		}
-		
-		if(hasNewDocuments())
+
+		if (hasNewDocuments())
 		{
 			return LogicExpressionResult.namedConstant("A new document already exists", false);
 		}
@@ -336,13 +298,13 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 		final LogicExpressionResult allowCreateNew = allowCreateNewLogic.evaluateToResult(parentDocument.asEvaluatee(), OnVariableNotFound.ReturnNoResult);
 		return allowCreateNew;
 	}
-	
+
 	private final boolean hasNewDocuments()
 	{
-		return getInnerDocumentsNoLoad().stream().anyMatch(document->document.isNew());
+		return getInnerDocumentsNoLoad().stream().anyMatch(document -> document.isNew());
 	}
 
-	private void assertDeleteDocumentAllowed(final Document document)
+	private void assertDeleteDocumentAllowed()
 	{
 		final LogicExpressionResult allowDelete = getAllowDeleteDocument();
 		if (allowDelete.isFalse())
@@ -371,42 +333,17 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 				.setParentDocument(parentDocument)
 				.retriveDocuments();
 
-		final Map<DocumentId, Document> documents = _documents;
-
 		//
 		// Clear documents map, but keep the new ones because they were not pushed to repository
-		{
-			logger.trace("Removing all documents, except the new ones from {}", this);
-			for (final Iterator<Document> it = documents.values().iterator(); it.hasNext();)
-			{
-				final Document document = it.next();
-
-				// Skip new documents
-				if (document.isNew())
-				{
-					continue;
-				}
-
-				it.remove();
-				logger.trace("Removed document from internal map: {}", document);
-			}
-		}
+		documentsCache.clearAllExceptNewDocuments();
 
 		//
 		// Put the new documents(from repository) into our documents map
-		for (final Document document : documentsNew)
-		{
-			final DocumentId documentId = document.getDocumentId();
-			final Document documentExisting = documents.put(documentId, document);
-			if (documentExisting != null)
-			{
-				logger.warn("loadAll: Replacing for documentId={}: {} with {}", documentId, documentExisting, document);
-			}
-		}
+		documentsCache.putAll(documentsNew);
 
 		//
 		// Update status
-		markNotStale();
+		documentsCache.markAllNotStale();
 		markFullyLoaded();
 	}
 
@@ -453,9 +390,14 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 	{
 		for (final Document document : getInnerDocumentsNoLoad())
 		{
-			document.saveIfHasChanges();
-			// TODO: if saved and refreshed, we shall mark it as not stale !!!
+			document.saveIfHasChanges(); // if saved, the onDocumentSaved() will be notified
 		}
+	}
+
+	@Override
+	public void onDocumentSaved(final Document document)
+	{
+		documentsCache.markNotStale(document.getDocumentId());
 	}
 
 	@Override
@@ -467,13 +409,11 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 		}
 
 		assertWritable();
-		
-		// TODO: check if application dictionary says that is allowed
+		assertDeleteDocumentAllowed();
 
 		for (final DocumentId documentId : documentIds)
 		{
 			final Document document = getDocumentById(documentId);
-			assertDeleteDocumentAllowed(document);
 
 			// Delete it from underlying repository (if it's present there)
 			if (!document.isNew())
@@ -482,8 +422,7 @@ public class IncludedDocumentsCollection implements IIncludedDocumentsCollection
 			}
 
 			// Delete it from our documents map
-			_documents.remove(documentId);
-			markNotStale(documentId);
+			documentsCache.removeById(documentId);
 		}
 	}
 
