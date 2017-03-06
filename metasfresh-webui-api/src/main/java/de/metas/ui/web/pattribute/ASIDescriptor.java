@@ -1,10 +1,13 @@
 package de.metas.ui.web.pattribute;
 
+import java.util.Set;
+
 import javax.annotation.concurrent.Immutable;
 
 import org.adempiere.util.Check;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.collect.ImmutableSet;
 
 import de.metas.ui.web.window.descriptor.DocumentEntityDescriptor;
 
@@ -41,6 +44,8 @@ public final class ASIDescriptor
 	private final int attributeSetId;
 	private final DocumentEntityDescriptor entityDescriptor;
 	private final ASILayout layout;
+	
+	private final Set<String> requiredParameters;
 
 	private ASIDescriptor(final Builder builder)
 	{
@@ -53,6 +58,8 @@ public final class ASIDescriptor
 
 		layout = builder.layout;
 		Check.assumeNotNull(layout, "Parameter layout is not null");
+		
+		this.requiredParameters = builder.requiredParamters == null ? ImmutableSet.of() : ImmutableSet.copyOf(builder.requiredParamters);
 	}
 
 	@Override
@@ -61,6 +68,7 @@ public final class ASIDescriptor
 		return MoreObjects.toStringHelper(this)
 				.add("M_AttributeSet_ID", attributeSetId)
 				.add("entityDescriptor", entityDescriptor)
+				.add("requiredParameters", requiredParameters)
 				.toString();
 	}
 
@@ -78,12 +86,18 @@ public final class ASIDescriptor
 	{
 		return layout;
 	}
+	
+	public Set<String> getRequiredParameters()
+	{
+		return requiredParameters;
+	}
 
 	public static final class Builder
 	{
 		private DocumentEntityDescriptor entityDescriptor;
 		private ASILayout layout;
 		private int attributeSetId = 0;
+		private Set<String> requiredParamters;
 
 		private Builder()
 		{
@@ -110,6 +124,12 @@ public final class ASIDescriptor
 		public Builder setM_AttributeSet_ID(final int attributeSetId)
 		{
 			this.attributeSetId = attributeSetId;
+			return this;
+		}
+
+		public Builder setRequiredParameters(Set<String> requiredParameters)
+		{
+			this.requiredParamters = requiredParameters;
 			return this;
 		}
 

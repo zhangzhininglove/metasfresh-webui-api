@@ -12,6 +12,7 @@ import org.adempiere.util.lang.IAutoCloseable;
 import org.compiere.model.I_M_AttributeInstance;
 import org.compiere.model.MAttributeSetInstance;
 import org.compiere.util.CCache;
+import org.compiere.util.Evaluatee;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -29,6 +30,7 @@ import de.metas.ui.web.window.model.Document;
 import de.metas.ui.web.window.model.Document.CopyMode;
 import de.metas.ui.web.window.model.DocumentCollection;
 import de.metas.ui.web.window.model.IDocumentChangesCollector.ReasonSupplier;
+import de.metas.ui.web.window.model.IDocumentEvaluatee;
 import de.metas.ui.web.window.model.IDocumentFieldView;
 
 /*
@@ -100,7 +102,8 @@ public class ASIRepository
 		asiDocData.checkAndGetValidStatus();
 		logger.trace("Created from ASI={}: {}", templateASI, asiDocData);
 
-		final ASIDocument asiDoc = new ASIDocument(asiDescriptor, asiDocData);
+		final Evaluatee effectiveContext = info.getEffectiveContext();
+		final ASIDocument asiDoc = new ASIDocument(asiDescriptor, asiDocData, effectiveContext);
 		commit(asiDoc);
 
 		return asiDoc;
@@ -110,13 +113,14 @@ public class ASIRepository
 	{
 		final DocumentPath documentPath = request.getSource().toSingleDocumentPath();
 		return documentsCollection.forDocumentReadonly(documentPath, document -> {
-			final int productId = document.asEvaluatee().get_ValueAsInt("M_Product_ID", -1);
-			final boolean isSOTrx = document.asEvaluatee().get_ValueAsBoolean("IsSOTrx", true);
+			final IDocumentEvaluatee documentEvaluatee = document.asEvaluatee();
+			final int productId = documentEvaluatee.get_ValueAsInt("M_Product_ID", -1);
+			final boolean isSOTrx = documentEvaluatee.get_ValueAsBoolean("IsSOTrx", true);
 
 			final int attributeSetInstanceId = request.getTemplateId();
 			final String callerTableName = document.getEntityDescriptor().getTableNameOrNull();
 			final int callerColumnId = -1; // FIXME implement
-			return ASIEditingInfo.of(productId, attributeSetInstanceId, callerTableName, callerColumnId, isSOTrx);
+			return ASIEditingInfo.of(productId, attributeSetInstanceId, callerTableName, callerColumnId, isSOTrx, documentEvaluatee);
 		});
 	}
 

@@ -142,7 +142,8 @@ public final class ASILookupDescriptor implements LookupDescriptor, LookupDataSo
 	@Override
 	public LookupDataSourceContext.Builder newContextForFetchingById(final Object id)
 	{
-		return LookupDataSourceContext.builder(CONTEXT_LookupTableName).putFilterById(id);
+		return LookupDataSourceContext.builder(CONTEXT_LookupTableName)
+				.putFilterById(id);
 	}
 
 	@Override

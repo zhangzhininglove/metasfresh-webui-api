@@ -93,6 +93,7 @@ public class ASIDescriptorFactory
 				.append(info.getWindowType())
 				.append(info.getM_AttributeSet_ID())
 				.append(info.getAvailableAttributeIds())
+				.append(info.getRequiredContextNames()) // atm this might be redundant because the parameters are extracted from attributes...
 				.build();
 	}
 
@@ -112,6 +113,7 @@ public class ASIDescriptorFactory
 				.setM_AttributeSet_ID(info.getM_AttributeSet_ID())
 				.setEntityDescriptor(entityDescriptor)
 				.setLayout(layout)
+				.setRequiredParameters(info.getRequiredContextNames())
 				.build();
 	}
 

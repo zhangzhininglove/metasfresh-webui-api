@@ -14,6 +14,7 @@ import org.adempiere.util.Services;
 import org.adempiere.util.lang.IAutoCloseable;
 import org.compiere.model.I_M_AttributeSetInstance;
 import org.compiere.util.Env;
+import org.compiere.util.Evaluatee;
 import org.slf4j.Logger;
 
 import com.google.common.base.MoreObjects;
@@ -59,19 +60,20 @@ import de.metas.ui.web.window.model.IDocumentFieldView;
 
 	private final ASIDescriptor descriptor;
 	private final Document data;
+	private final Evaluatee effectiveContext;
 
 	// State
 	private final ReentrantReadWriteLock _lock;
 	private boolean completed;
 
-
-	/* package */ ASIDocument(final ASIDescriptor descriptor, final Document data)
+	/* package */ ASIDocument(final ASIDescriptor descriptor, final Document data, final Evaluatee effectiveContext)
 	{
 		Check.assumeNotNull(descriptor, "Parameter descriptor is not null");
 		Check.assumeNotNull(data, "Parameter data is not null");
 		this.descriptor = descriptor;
 		this.data = data;
-		
+		this.effectiveContext = effectiveContext;
+
 		_lock = new ReentrantReadWriteLock();
 		completed = false;
 	}
@@ -81,7 +83,8 @@ import de.metas.ui.web.window.model.IDocumentFieldView;
 	{
 		descriptor = asiDocument.descriptor;
 		data = asiDocument.data.copy(copyMode);
-		
+		effectiveContext = asiDocument.effectiveContext;
+
 		_lock = asiDocument._lock; // always share
 		completed = asiDocument.completed;
 	}
@@ -94,15 +97,15 @@ import de.metas.ui.web.window.model.IDocumentFieldView;
 				.add("completed", completed)
 				.toString();
 	}
-	
+
 	private final void assertNotCompleted()
 	{
-		if(completed)
+		if (completed)
 		{
 			throw new IllegalStateException("ASI document was completed");
 		}
 	}
-	
+
 	public IAutoCloseable lockForReading()
 	{
 		// assume _lock is not null
@@ -130,7 +133,6 @@ import de.metas.ui.web.window.model.IDocumentFieldView;
 			logger.debug("Released write lock for {}: {}", this, writeLock);
 		};
 	}
-
 
 	public ASIDocument copy(final CopyMode copyMode)
 	{
@@ -177,22 +179,22 @@ import de.metas.ui.web.window.model.IDocumentFieldView;
 	{
 		return data.getFieldLookupValues(attributeName);
 	}
-	
+
 	public boolean isCompleted()
 	{
 		return completed;
 	}
-	
+
 	public IntegerLookupValue complete()
 	{
 		assertNotCompleted();
-		
+
 		final I_M_AttributeSetInstance asiRecord = createM_AttributeSetInstance(this);
 		final IntegerLookupValue lookupValue = IntegerLookupValue.of(asiRecord.getM_AttributeSetInstance_ID(), asiRecord.getDescription());
 		completed = true;
 		return lookupValue;
 	}
-	
+
 	private static final I_M_AttributeSetInstance createM_AttributeSetInstance(final ASIDocument asiDoc)
 	{
 		//
