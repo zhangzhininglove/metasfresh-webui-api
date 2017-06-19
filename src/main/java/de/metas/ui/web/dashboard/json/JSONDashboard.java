@@ -1,12 +1,13 @@
 package de.metas.ui.web.dashboard.json;
 
-import java.io.Serializable;
 import java.util.Collection;
 import java.util.List;
 
 import org.adempiere.util.GuavaCollectors;
 import org.slf4j.Logger;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import de.metas.logging.LogManager;
@@ -35,8 +36,8 @@ import de.metas.ui.web.window.datatypes.json.JSONOptions;
  * #L%
  */
 
-@SuppressWarnings("serial")
-public class JSONDashboard implements Serializable
+@JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, isGetterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
+public final class JSONDashboard
 {
 	public static final JSONDashboard of(final Collection<UserDashboardItem> items, final JSONOptions jsonOpts)
 	{
@@ -47,6 +48,9 @@ public class JSONDashboard implements Serializable
 
 	@JsonProperty("items")
 	private final List<JSONDashboardItem> items;
+
+	@JsonProperty("readOnly")
+	private boolean readOnly;
 
 	private JSONDashboard(final Collection<UserDashboardItem> items, final JSONOptions jsonOpts)
 	{
@@ -71,5 +75,11 @@ public class JSONDashboard implements Serializable
 	public List<JSONDashboardItem> getItems()
 	{
 		return items;
+	}
+
+	public JSONDashboard setReadOnly(final boolean readOnly)
+	{
+		this.readOnly = readOnly;
+		return this;
 	}
 }

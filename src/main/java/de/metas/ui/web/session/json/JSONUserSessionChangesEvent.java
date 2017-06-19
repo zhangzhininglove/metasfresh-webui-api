@@ -61,6 +61,10 @@ public class JSONUserSessionChangesEvent
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	private final JSONLookupValue language;
 
+	@JsonProperty("dashboardChanged")
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private final Boolean dashboardChanged;
+
 	@JsonProperty("timestamp")
 	private final String timestamp = JSONDate.toJson(SystemTime.asTimestamp());
 
@@ -69,6 +73,7 @@ public class JSONUserSessionChangesEvent
 		return fullname == null
 				&& email == null
 				&& avatarId == null
-				&& language == null;
+				&& language == null
+				&& dashboardChanged == null;
 	}
 }

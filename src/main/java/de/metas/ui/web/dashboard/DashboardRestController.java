@@ -3,6 +3,7 @@ package de.metas.ui.web.dashboard;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 import org.elasticsearch.client.Client;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,13 +17,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
 import de.metas.ui.web.config.WebConfig;
 import de.metas.ui.web.dashboard.UserDashboardRepository.DashboardPatchPath;
-import de.metas.ui.web.dashboard.UserDashboardRepository.UserDashboardKey;
 import de.metas.ui.web.dashboard.json.JSONDashboard;
+import de.metas.ui.web.dashboard.json.JSONDashboardCreateNewRequest;
 import de.metas.ui.web.dashboard.json.JSONDashboardItem;
+import de.metas.ui.web.dashboard.json.JSONDashboardSummary;
 import de.metas.ui.web.dashboard.json.JsonKPI;
 import de.metas.ui.web.dashboard.json.JsonUserDashboardItemAddRequest;
 import de.metas.ui.web.session.UserSession;
@@ -61,7 +64,9 @@ public class DashboardRestController
 	@Autowired
 	private UserSession userSession;
 	@Autowired
-	private UserDashboardRepository userDashboardRepo;
+	private UserDashboardRepository dashboardsRepo;
+	@Autowired
+	private UserDashboardPermissionsRepository dashboardPermissionsRepo;
 	@Autowired
 	private Client elasticsearchClient;
 
@@ -72,16 +77,62 @@ public class DashboardRestController
 
 	private UserDashboard getUserDashboardForReading()
 	{
-		final UserDashboard dashboard = userDashboardRepo.getUserDashboard(UserDashboardKey.of(userSession.getAD_Client_ID()));
-		// TODO: assert readable by current user
+		final UserDashboard dashboard = getUserDashbord();
+		dashboardPermissionsRepo.assertCanRead(dashboard.getId(), userSession.getAD_User_ID());
 		return dashboard;
 	}
 
 	private UserDashboard getUserDashboardForWriting()
 	{
-		final UserDashboard dashboard = userDashboardRepo.getUserDashboard(UserDashboardKey.of(userSession.getAD_Client_ID()));
-		// TODO: assert writable by current user
+		final UserDashboard dashboard = getUserDashbord();
+		dashboardPermissionsRepo.assertCanWrite(dashboard.getId(), userSession.getAD_User_ID());
 		return dashboard;
+	}
+
+	private UserDashboard getUserDashbord()
+	{
+		if (userSession.getWebuiDashboardId() > 0)
+		{
+			return dashboardsRepo.getUserDashboard(userSession.getWebuiDashboardId());
+		}
+
+		return dashboardsRepo.getDefaultDashboard(userSession.getAD_Client_ID());
+	}
+
+	@PostMapping("/new")
+	public void createNewDashboard(final JSONDashboardCreateNewRequest request)
+	{
+		userSession.assertLoggedIn();
+		final int adUserId = userSession.getAD_User_ID();
+
+		final int templateDashboardId = request.getTemplateDashboardId();
+		Preconditions.checkArgument(templateDashboardId > 0, "templateDashboardId > 0");
+		dashboardPermissionsRepo.assertCanRead(templateDashboardId, adUserId);
+
+		final int newDashboardId = dashboardsRepo.copyDashboardToUser(templateDashboardId, request.getName());
+		dashboardPermissionsRepo.addPermission(newDashboardId, adUserId, true);
+
+		dashboardsRepo.setActiveDashboardForUser(newDashboardId, adUserId);
+	}
+
+	@GetMapping("/available")
+	public List<JSONDashboardSummary> getAvailableDashboards()
+	{
+		userSession.assertLoggedIn();
+		final int adUserId = userSession.getAD_User_ID();
+		final String adLanguage = userSession.getAD_Language();
+
+		final Set<Integer> dashboardIds = dashboardPermissionsRepo.getReadableUserDashboardIds(adUserId);
+
+		return dashboardsRepo.getUserDashboardSummayList(dashboardIds)
+				.stream()
+				.map(dashboard -> JSONDashboardSummary.builder()
+						.dashboardId(dashboard.getDashboardId())
+						.name(dashboard.getName().translate(adLanguage))
+						.description(dashboard.getDescription().translate(adLanguage))
+						.readOnly(!dashboardPermissionsRepo.canWrite(dashboard.getDashboardId(), adUserId))
+						.build())
+				.collect(ImmutableList.toImmutableList());
 	}
 
 	@GetMapping("/kpis")
@@ -89,8 +140,9 @@ public class DashboardRestController
 	{
 		userSession.assertLoggedIn();
 
-		final UserDashboard userDashboard = getUserDashboardForReading();
-		return JSONDashboard.of(userDashboard.getItems(DashboardWidgetType.KPI), newJSONOpts());
+		final UserDashboard dashboard = getUserDashboardForReading();
+		return JSONDashboard.of(dashboard.getItems(DashboardWidgetType.KPI), newJSONOpts())
+				.setReadOnly(!dashboardPermissionsRepo.canWrite(dashboard.getId(), userSession.getAD_User_ID()));
 	}
 
 	@GetMapping("/kpis/available")
@@ -98,7 +150,7 @@ public class DashboardRestController
 	{
 		userSession.assertLoggedIn();
 
-		final Collection<KPI> kpis = userDashboardRepo.getKPIsAvailableToAdd();
+		final Collection<KPI> kpis = dashboardsRepo.getKPIsAvailableToAdd();
 
 		final JSONOptions jsonOpts = newJSONOpts();
 		return kpis.stream()
@@ -113,7 +165,7 @@ public class DashboardRestController
 		userSession.assertLoggedIn();
 
 		final UserDashboard userDashboard = getUserDashboardForWriting();
-		final int itemId = userDashboardRepo.addUserDashboardItem(userDashboard, DashboardWidgetType.KPI, request);
+		final int itemId = dashboardsRepo.addUserDashboardItem(userDashboard, DashboardWidgetType.KPI, request);
 
 		final UserDashboardItem kpiItem = userDashboard.getItemById(DashboardWidgetType.KPI, itemId);
 		return JSONDashboardItem.of(kpiItem, newJSONOpts());
@@ -125,7 +177,7 @@ public class DashboardRestController
 		userSession.assertLoggedIn();
 
 		final UserDashboard dashboard = getUserDashboardForWriting();
-		userDashboardRepo.changeDashboardItems(dashboard, DashboardWidgetType.KPI, events);
+		dashboardsRepo.changeDashboardItems(dashboard, DashboardWidgetType.KPI, events);
 	}
 
 	private final KPIDataResult getKPIData(final UserDashboardItem dashboardItem, final long fromMillis, final long toMillis, final boolean prettyValues)
@@ -162,7 +214,7 @@ public class DashboardRestController
 		userSession.assertLoggedIn();
 
 		final UserDashboard dashboard = getUserDashboardForWriting();
-		userDashboardRepo.deleteUserDashboardItem(dashboard, DashboardWidgetType.KPI, itemId);
+		dashboardsRepo.deleteUserDashboardItem(dashboard, DashboardWidgetType.KPI, itemId);
 	}
 
 	@PostMapping("/targetIndicators/new")
@@ -171,7 +223,7 @@ public class DashboardRestController
 		userSession.assertLoggedIn();
 
 		final UserDashboard dashboard = getUserDashboardForWriting();
-		final int itemId = userDashboardRepo.addUserDashboardItem(dashboard, DashboardWidgetType.TargetIndicator, request);
+		final int itemId = dashboardsRepo.addUserDashboardItem(dashboard, DashboardWidgetType.TargetIndicator, request);
 
 		final UserDashboardItem targetIndicatorItem = dashboard.getItemById(DashboardWidgetType.TargetIndicator, itemId);
 		return JSONDashboardItem.of(targetIndicatorItem, newJSONOpts());
@@ -183,7 +235,7 @@ public class DashboardRestController
 		userSession.assertLoggedIn();
 
 		final UserDashboard dashboard = getUserDashboardForWriting();
-		userDashboardRepo.changeDashboardItems(dashboard, DashboardWidgetType.TargetIndicator, events);
+		dashboardsRepo.changeDashboardItems(dashboard, DashboardWidgetType.TargetIndicator, events);
 	}
 
 	@GetMapping("/targetIndicators/available")
@@ -191,7 +243,7 @@ public class DashboardRestController
 	{
 		userSession.assertLoggedIn();
 
-		final Collection<KPI> kpis = userDashboardRepo.getTargetIndicatorsAvailableToAdd();
+		final Collection<KPI> kpis = dashboardsRepo.getTargetIndicatorsAvailableToAdd();
 
 		final JSONOptions jsonOpts = newJSONOpts();
 		return kpis.stream()
@@ -205,8 +257,9 @@ public class DashboardRestController
 	{
 		userSession.assertLoggedIn();
 
-		final UserDashboard userDashboard = getUserDashboardForReading();
-		return JSONDashboard.of(userDashboard.getItems(DashboardWidgetType.TargetIndicator), newJSONOpts());
+		final UserDashboard dashboard = getUserDashboardForReading();
+		return JSONDashboard.of(dashboard.getItems(DashboardWidgetType.TargetIndicator), newJSONOpts())
+				.setReadOnly(!dashboardPermissionsRepo.canWrite(dashboard.getId(), userSession.getAD_User_ID()));
 	}
 
 	@DeleteMapping("/targetIndicators/{itemId}")
@@ -215,7 +268,7 @@ public class DashboardRestController
 		userSession.assertLoggedIn();
 
 		final UserDashboard dashboard = getUserDashboardForWriting();
-		userDashboardRepo.deleteUserDashboardItem(dashboard, DashboardWidgetType.TargetIndicator, itemId);
+		dashboardsRepo.deleteUserDashboardItem(dashboard, DashboardWidgetType.TargetIndicator, itemId);
 	}
 
 	@GetMapping("/targetIndicators/{itemId}/data")

@@ -353,6 +353,16 @@ public class UserSession
 		return userFullnameOld;
 	}
 	
+	public void setWebuiDashboardId(int webuiDashboardId)
+	{
+		data.setWebuiDashboardId(webuiDashboardId > 0 ? webuiDashboardId : 0);
+	}
+	
+	public int getWebuiDashboardId()
+	{
+		return data.getWebuiDashboardId();
+	}
+	
 	/** @return websocket notifications endpoint on which the frontend shall listen */
 	public String getWebsocketEndpoint()
 	{		

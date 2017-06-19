@@ -107,6 +107,18 @@ public class UserSessionRepository
 				changesCollector.language(userSession.getLanguageAsJson());
 			}
 		}
+		
+		// Dashboard
+		{
+			final int dashboardIdOld = userSession.getWebuiDashboardId();
+			userSession.setWebuiDashboardId(fromUser.getWEBUI_Dashboard_ID());
+			final int dashboardIdNew = userSession.getWebuiDashboardId();
+			
+			if(!Objects.equals(dashboardIdNew, dashboardIdOld))
+			{
+				changesCollector.dashboardChanged(Boolean.TRUE);
+			}
+		}
 
 		//
 		// Fire user session changed websocket event
@@ -115,7 +127,6 @@ public class UserSessionRepository
 		{
 			final String websocketEndpoint = WebSocketConfig.buildUserSessionTopicName(userSession.getAD_User_ID());
 			websocketSender.convertAndSend(websocketEndpoint, changesEvent);
-
 		}
 	}
 

@@ -75,6 +75,7 @@ import de.metas.ui.web.base.session.UserPreference;
 	private String userFullname;
 	private String userEmail;
 	private String avatarId;
+	private int webuiDashboardId;
 
 	//
 	// Defaults

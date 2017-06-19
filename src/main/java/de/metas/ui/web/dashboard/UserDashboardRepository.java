@@ -1,6 +1,5 @@
 package de.metas.ui.web.dashboard;
 
-import java.io.Serializable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -8,8 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import javax.annotation.concurrent.Immutable;
 
 import org.adempiere.ad.dao.IQueryBL;
 import org.adempiere.ad.dao.IQueryBuilder;
@@ -19,6 +16,7 @@ import org.adempiere.ad.trx.api.ITrx;
 import org.adempiere.ad.trx.api.ITrxManager;
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.model.InterfaceWrapperHelper;
+import org.adempiere.user.api.IUserDAO;
 import org.adempiere.util.GuavaCollectors;
 import org.adempiere.util.Services;
 import org.compiere.model.IQuery;
@@ -29,8 +27,10 @@ import org.compiere.util.Env;
 import org.slf4j.Logger;
 import org.springframework.stereotype.Service;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
+import de.metas.adempiere.model.I_AD_User;
 import de.metas.i18n.IModelTranslationMap;
 import de.metas.i18n.ITranslatableString;
 import de.metas.i18n.ImmutableTranslatableString;
@@ -45,7 +45,6 @@ import de.metas.ui.web.dashboard.json.JsonUserDashboardItemAddRequest;
 import de.metas.ui.web.exceptions.EntityNotFoundException;
 import de.metas.ui.web.window.datatypes.json.JSONPatchEvent;
 import lombok.NonNull;
-import lombok.Value;
 
 /*
  * #%L
@@ -77,29 +76,19 @@ public class UserDashboardRepository
 	private static final Logger logger = LogManager.getLogger(UserDashboardRepository.class);
 	private final transient IQueryBL queryBL = Services.get(IQueryBL.class);
 
-	private final CCache<UserDashboardKey, UserDashboard> userDashboadCache = CCache.<UserDashboardKey, UserDashboard> newLRUCache(I_WEBUI_Dashboard.Table_Name + "#UserDashboard", Integer.MAX_VALUE, 0)
+	private final CCache<Integer, Integer> defaultDashboardIdByAdClientId = CCache.newCache(I_WEBUI_Dashboard.Table_Name + "#DefaultDashboardId", 5, 0);
+	private final CCache<Integer, UserDashboard> userDashboadCache = CCache.<Integer, UserDashboard> newLRUCache(I_WEBUI_Dashboard.Table_Name + "#UserDashboard", Integer.MAX_VALUE, 0)
 			.addResetForTableName(I_WEBUI_DashboardItem.Table_Name);
 	private final CCache<Integer, KPI> kpisCache = CCache.<Integer, KPI> newLRUCache(I_WEBUI_KPI.Table_Name + "#KPIs", Integer.MAX_VALUE, 0)
 			.addResetForTableName(I_WEBUI_KPI_Field.Table_Name);
 
-	public UserDashboard getUserDashboard(final UserDashboardKey userDashboardKey)
+	public UserDashboard getDefaultDashboard(final int adClientId)
 	{
-		return userDashboadCache.getOrLoad(userDashboardKey, () -> retrieveUserDashboard(userDashboardKey));
-	}
-
-	private void invalidateUserDashboard(final UserDashboard userDashboard)
-	{
-		userDashboadCache.remove(UserDashboardKey.of(userDashboard.getAdClientId()));
-	}
-
-	private UserDashboard retrieveUserDashboard(final UserDashboardKey key)
-	{
-		final int adClientId = key.getAdClientId();
-
-		final I_WEBUI_Dashboard webuiDashboard = queryBL
+		final int dashboardId = defaultDashboardIdByAdClientId.getOrLoad(adClientId, () -> queryBL
 				.createQueryBuilder(I_WEBUI_Dashboard.class)
 				.addOnlyActiveRecordsFilter()
 				.addInArrayFilter(I_WEBUI_Dashboard.COLUMN_AD_Client_ID, Env.CTXVALUE_AD_Client_ID_System, adClientId)
+				.addEqualsFilter(I_WEBUI_Dashboard.COLUMN_IsUserDashboard, false)
 				//
 				.orderBy()
 				.addColumn(I_WEBUI_Dashboard.COLUMN_AD_Client_ID, Direction.Descending, Nulls.Last)
@@ -108,17 +97,36 @@ public class UserDashboardRepository
 				.endOrderBy()
 				//
 				.create()
-				.first(I_WEBUI_Dashboard.class);
+				.firstId());
 
-		if (webuiDashboard == null)
+		if (dashboardId <= 0)
 		{
 			return UserDashboard.EMPTY;
 		}
 
+		return getUserDashboard(dashboardId);
+	}
+
+	public UserDashboard getUserDashboard(final int userDashboardId)
+	{
+		Preconditions.checkArgument(userDashboardId > 0, "userDashboardId > 0");
+		return userDashboadCache.getOrLoad(userDashboardId, () -> retrieveUserDashboard(userDashboardId));
+	}
+
+	private void invalidateUserDashboard(final UserDashboard userDashboard)
+	{
+		userDashboadCache.remove(userDashboard.getId());
+	}
+
+	private UserDashboard retrieveUserDashboard(final int userDashboardId)
+	{
+		Preconditions.checkArgument(userDashboardId > 0, "userDashboardId > 0");
+
+		final I_WEBUI_Dashboard webuiDashboard = InterfaceWrapperHelper.load(userDashboardId, I_WEBUI_Dashboard.class);
 		return createUserDashboard(webuiDashboard);
 	}
 
-	private UserDashboard createUserDashboard(final I_WEBUI_Dashboard webuiDashboard)
+	private UserDashboard createUserDashboard(@NonNull final I_WEBUI_Dashboard webuiDashboard)
 	{
 		final int webuiDashboardId = webuiDashboard.getWEBUI_Dashboard_ID();
 
@@ -182,8 +190,8 @@ public class UserDashboardRepository
 	{
 		final List<Integer> kpiIds = queryBL.createQueryBuilder(I_WEBUI_KPI.class)
 				.addOnlyActiveRecordsFilter()
-				.addOnlyContextClientOrSystem()
 				.create()
+				.setApplyAccessFilterRW(false)
 				.listIds();
 
 		return getKPIs(kpiIds);
@@ -193,9 +201,9 @@ public class UserDashboardRepository
 	{
 		final List<Integer> kpiIds = queryBL.createQueryBuilder(I_WEBUI_KPI.class)
 				.addOnlyActiveRecordsFilter()
-				.addOnlyContextClientOrSystem()
 				.addEqualsFilter(I_WEBUI_KPI.COLUMN_ChartType, X_WEBUI_KPI.CHARTTYPE_Metric)
 				.create()
+				.setApplyAccessFilterRW(false)
 				.listIds();
 
 		return getKPIs(kpiIds);
@@ -528,26 +536,68 @@ public class UserDashboardRepository
 		return maxSeqNo != null ? maxSeqNo : 0;
 	}
 
-	//
-	//
-	//
-	@Immutable
-	@SuppressWarnings("serial")
-	@Value
-	public static final class UserDashboardKey implements Serializable
+	public final int copyDashboardToUser(final int fromDashboardId, final String name)
 	{
-		public static final UserDashboardKey of(final int adClientId)
-		{
-			return new UserDashboardKey(adClientId);
-		}
+		Preconditions.checkArgument(fromDashboardId > 0, "fromDashboardId > 0");
+		Check.assumeNotEmpty(name, "name is not empty");
 
-		private final int adClientId;
+		return Services.get(ITrxManager.class).call(ITrx.TRXNAME_ThreadInherited, () -> {
+			final I_WEBUI_Dashboard fromDashboard = InterfaceWrapperHelper.load(fromDashboardId, I_WEBUI_Dashboard.class);
 
-		private UserDashboardKey(final int adClientId)
-		{
-			super();
-			this.adClientId = adClientId < 0 ? -1 : adClientId;
-		}
+			final I_WEBUI_Dashboard newDashboard = InterfaceWrapperHelper.copy()
+					.setFrom(fromDashboard)
+					.copyToNew(I_WEBUI_Dashboard.class);
+			newDashboard.setName(name);
+			newDashboard.setIsDefault(false);
+			newDashboard.setIsUserDashboard(true);
+			InterfaceWrapperHelper.save(newDashboard);
+
+			retrieveWEBUI_DashboardItemsQuery(fromDashboardId)
+					.create()
+					.stream(I_WEBUI_DashboardItem.class)
+					.forEach(fromItem -> {
+						final I_WEBUI_DashboardItem newItem = InterfaceWrapperHelper.copy()
+								.setFrom(fromItem)
+								.setSkipCalculatedColumns(false) // we want to copy the SeqNo
+								.copyToNew(I_WEBUI_DashboardItem.class);
+						newItem.setWEBUI_Dashboard_ID(newDashboard.getWEBUI_Dashboard_ID());
+						InterfaceWrapperHelper.save(newItem);
+					});
+
+			return newDashboard.getWEBUI_Dashboard_ID();
+		});
 	}
 
+	public void setActiveDashboardForUser(final int dashboardId, final int adUserId)
+	{
+		final I_AD_User adUser = Services.get(IUserDAO.class).retrieveUser(adUserId);
+		adUser.setWEBUI_Dashboard_ID(dashboardId);
+		InterfaceWrapperHelper.save(adUser);
+		// assume the current session will be automatically updated
+	}
+
+	public List<UserDashboardSummary> getUserDashboardSummayList(final Collection<Integer> dashboardIds)
+	{
+		if (dashboardIds.isEmpty())
+		{
+			return ImmutableList.of();
+		}
+		return queryBL.createQueryBuilder(I_WEBUI_Dashboard.class)
+				.addOnlyActiveRecordsFilter()
+				.addInArrayFilter(I_WEBUI_Dashboard.COLUMN_WEBUI_Dashboard_ID, dashboardIds)
+				.create()
+				.stream(I_WEBUI_Dashboard.class)
+				.map(this::createUserDashboardSummary)
+				.collect(ImmutableList.toImmutableList());
+	}
+
+	private final UserDashboardSummary createUserDashboardSummary(final I_WEBUI_Dashboard dashboardDef)
+	{
+		final IModelTranslationMap dashboardTrl = InterfaceWrapperHelper.getModelTranslationMap(dashboardDef);
+		return UserDashboardSummary.builder()
+				.dashboardId(dashboardDef.getWEBUI_Dashboard_ID())
+				.name(dashboardTrl.getColumnTrl(I_WEBUI_Dashboard.COLUMNNAME_Name, dashboardDef.getName()))
+				.name(dashboardTrl.getColumnTrl(I_WEBUI_Dashboard.COLUMNNAME_Description, dashboardDef.getDescription()))
+				.build();
+	}
 }
