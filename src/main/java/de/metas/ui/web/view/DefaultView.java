@@ -90,8 +90,9 @@ public class DefaultView implements IView
 	private final transient DocumentFilterDescriptorsProvider viewFilterDescriptors;
 	/** Sticky filters (i.e. active filters which cannot be changed) */
 	private final ImmutableList<DocumentFilter> stickyFilters;
-	/** Active filters */
+	/** Regular filters */
 	private final ImmutableList<DocumentFilter> filters;
+	private transient ImmutableList<DocumentFilter> _allFilters;
 
 	//
 	// Misc
@@ -100,7 +101,6 @@ public class DefaultView implements IView
 	//
 	// Caching
 	private final transient CCache<DocumentId, IViewRow> cache_rowsById;
-
 
 	private DefaultView(final Builder builder)
 	{
@@ -167,19 +167,19 @@ public class DefaultView implements IView
 	{
 		return defaultSelection.getViewId();
 	}
-	
+
 	@Override
 	public JSONViewDataType getViewType()
 	{
 		return viewType;
 	}
-	
+
 	@Override
 	public ITranslatableString getDescription()
 	{
 		return ImmutableTranslatableString.empty();
 	}
-	
+
 	@Override
 	public ImmutableSet<DocumentPath> getReferencingDocumentPaths()
 	{
@@ -228,6 +228,19 @@ public class DefaultView implements IView
 		return filters;
 	}
 
+	public List<DocumentFilter> getAllFilters()
+	{
+		ImmutableList<DocumentFilter> allFilters = _allFilters;
+		if (allFilters == null)
+		{
+			_allFilters = allFilters = ImmutableList.<DocumentFilter> builder()
+					.addAll(getFilters())
+					.addAll(getStickyFilters())
+					.build();
+		}
+		return allFilters;
+	}
+
 	@Override
 	public void close()
 	{
@@ -267,6 +280,19 @@ public class DefaultView implements IView
 	}
 
 	@Override
+	public ViewResult getPageWithRowIdsOnly(final int firstRow, final int pageLength, final List<DocumentQueryOrderBy> orderBys)
+	{
+		assertNotClosed();
+
+		final ViewEvaluationCtx evalCtx = ViewEvaluationCtx.of(Env.getCtx());
+		final ViewRowIdsOrderedSelection orderedSelection = getOrderedSelection(orderBys);
+
+		final List<DocumentId> rowIds = viewDataRepository.retrieveRowIdsByPage(evalCtx, orderedSelection, firstRow, pageLength);
+
+		return ViewResult.ofViewAndRowIds(this, firstRow, pageLength, orderedSelection.getOrderBys(), rowIds);
+	}
+
+	@Override
 	public IViewRow getById(final DocumentId rowId)
 	{
 		assertNotClosed();
@@ -299,7 +325,7 @@ public class DefaultView implements IView
 	@Override
 	public String getSqlWhereClause(final DocumentIdsSelection rowIds)
 	{
-		return viewDataRepository.getSqlWhereClause(getViewId(), rowIds);
+		return viewDataRepository.getSqlWhereClause(getViewId(), getAllFilters(), rowIds);
 	}
 
 	@Override
@@ -337,7 +363,7 @@ public class DefaultView implements IView
 		{
 			return Stream.empty();
 		}
-		else if(rowIds.isAll())
+		else if (rowIds.isAll())
 		{
 			throw new UnsupportedOperationException("Streaming all rows is not supported");
 		}
@@ -431,24 +457,24 @@ public class DefaultView implements IView
 		{
 			return windowId;
 		}
-		
+
 		public Builder setViewType(JSONViewDataType viewType)
 		{
 			this.viewType = viewType;
 			return this;
 		}
-		
+
 		public JSONViewDataType getViewType()
 		{
 			return viewType;
 		}
-		
+
 		public Builder setReferencingDocumentPaths(Set<DocumentPath> referencingDocumentPaths)
 		{
 			this.referencingDocumentPaths = referencingDocumentPaths;
 			return this;
 		}
-		
+
 		private ImmutableSet<DocumentPath> getReferencingDocumentPaths()
 		{
 			return referencingDocumentPaths == null ? ImmutableSet.of() : ImmutableSet.copyOf(referencingDocumentPaths);
@@ -471,36 +497,35 @@ public class DefaultView implements IView
 
 		public Builder addStickyFilter(@Nullable final DocumentFilter stickyFilter)
 		{
-			if(stickyFilter == null)
+			if (stickyFilter == null)
 			{
 				return this;
 			}
-			
-			if(_stickyFilters == null)
+
+			if (_stickyFilters == null)
 			{
 				_stickyFilters = new ArrayList<>();
 			}
 			_stickyFilters.add(stickyFilter);
-			
+
 			return this;
 		}
-		
+
 		public Builder addStickyFilters(final List<DocumentFilter> stickyFilters)
 		{
-			if(stickyFilters == null || stickyFilters.isEmpty())
+			if (stickyFilters == null || stickyFilters.isEmpty())
 			{
 				return this;
 			}
-			
-			if(_stickyFilters == null)
+
+			if (_stickyFilters == null)
 			{
 				_stickyFilters = new ArrayList<>();
 			}
 			_stickyFilters.addAll(stickyFilters);
-			
+
 			return this;
 		}
-
 
 		private ImmutableList<DocumentFilter> getStickyFilters()
 		{

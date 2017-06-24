@@ -1,11 +1,11 @@
-package de.metas.ui.web.mail;
+package de.metas.ui.web.dashboard.json;
 
-import de.metas.ui.web.window.datatypes.DocumentPath;
-import de.metas.ui.web.window.datatypes.LookupValue;
-import de.metas.ui.web.window.datatypes.LookupValuesList;
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+
+import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Builder.Default;
-import lombok.NonNull;
+import lombok.Getter;
 import lombok.Value;
 
 /*
@@ -18,35 +18,42 @@ import lombok.Value;
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 2 of the
  * License, or (at your option) any later version.
- *
+ * 
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU General Public
  * License along with this program. If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
  * #L%
  */
 
-@Builder(toBuilder = true)
+@JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, isGetterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
+@Builder
 @Value
-public class WebuiEmail
+public class JsonUserDashboardItemAddRequest
 {
-	@NonNull
-	private final String emailId;
-	private final int ownerUserId;
-	
-	private final LookupValue from;
-	@Default
-	private final LookupValuesList to = LookupValuesList.EMPTY;
-	private final String subject;
-	private final String message;
-	@Default
-	private final LookupValuesList attachments = LookupValuesList.EMPTY;
-	
-	private final boolean sent;
-	
-	private final DocumentPath contextDocumentPath;
+	private final int kpiId;
+	private final JSONInterval interval;
+	private final JSONWhen when;
+
+	@AllArgsConstructor
+	@Getter
+	public static enum JSONInterval
+	{
+		week("P-7D");
+
+		private final String esTimeRange;
+	}
+
+	@AllArgsConstructor
+	@Getter
+	public static enum JSONWhen
+	{
+		now(null), lastWeek("P-7D");
+
+		private final String esTimeRangeEnd;
+	}
 }

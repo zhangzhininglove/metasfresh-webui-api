@@ -1,12 +1,9 @@
-package de.metas.ui.web.mail;
+package de.metas.ui.web.window.descriptor;
 
-import de.metas.ui.web.window.datatypes.DocumentPath;
-import de.metas.ui.web.window.datatypes.LookupValue;
-import de.metas.ui.web.window.datatypes.LookupValuesList;
-import lombok.Builder;
-import lombok.Builder.Default;
-import lombok.NonNull;
-import lombok.Value;
+import org.junit.Assert;
+import org.junit.Test;
+
+import de.metas.ui.web.window.model.lookup.LookupValueByIdSupplier;
 
 /*
  * #%L
@@ -30,23 +27,18 @@ import lombok.Value;
  * #L%
  */
 
-@Builder(toBuilder = true)
-@Value
-public class WebuiEmail
+public class DocumentFieldDescriptor_convertToValueClass_Test
 {
-	@NonNull
-	private final String emailId;
-	private final int ownerUserId;
-	
-	private final LookupValue from;
-	@Default
-	private final LookupValuesList to = LookupValuesList.EMPTY;
-	private final String subject;
-	private final String message;
-	@Default
-	private final LookupValuesList attachments = LookupValuesList.EMPTY;
-	
-	private final boolean sent;
-	
-	private final DocumentPath contextDocumentPath;
+	@Test
+	public void test_FromBigDecimalString_ToInteger()
+	{
+		final String fieldName = "MyInteger";
+		final Object value = "12345.00000000000";
+		final DocumentFieldWidgetType widgetType = DocumentFieldWidgetType.Integer;
+		final Class<?> targetType = widgetType.getValueClass();
+		final LookupValueByIdSupplier lookupDataSource= null;
+		
+		final Object valueConverted = DocumentFieldDescriptor.convertToValueClass(fieldName, value, widgetType, targetType, lookupDataSource);
+		Assert.assertEquals(12345, valueConverted);
+	}
 }

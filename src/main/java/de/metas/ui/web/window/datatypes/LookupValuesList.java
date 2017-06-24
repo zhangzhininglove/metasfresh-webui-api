@@ -8,11 +8,16 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collector;
+import java.util.stream.Stream;
 
 import javax.annotation.concurrent.Immutable;
 
+import org.adempiere.util.GuavaCollectors;
+
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableMap;
+
+import lombok.NonNull;
 
 /*
  * #%L
@@ -27,11 +32,11 @@ import com.google.common.collect.ImmutableMap;
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public
- * License along with this program.  If not, see
+ * License along with this program. If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
  * #L%
  */
@@ -68,6 +73,18 @@ public final class LookupValuesList
 		final BinaryOperator<ImmutableMap.Builder<Object, LookupValue>> combiner = (builder1, builder2) -> builder1.putAll(builder2.build());
 		final Function<ImmutableMap.Builder<Object, LookupValue>, LookupValuesList> finisher = (builder) -> build(builder, debugProperties);
 		return Collector.of(supplier, accumulator, combiner, finisher);
+	}
+
+	public static final LookupValuesList fromNullable(final LookupValue lookupValue)
+	{
+		if(lookupValue == null)
+		{
+			return EMPTY;
+		}
+		
+		final ImmutableMap<Object, LookupValue> valuesById = ImmutableMap.of(lookupValue.getId(), lookupValue);
+		final Map<String, String> debugProperties = ImmutableMap.of();
+		return new LookupValuesList(valuesById, debugProperties);
 	}
 
 	private static final LookupValuesList build(final ImmutableMap.Builder<Object, LookupValue> valuesByIdBuilder, final Map<String, String> debugProperties)
@@ -161,6 +178,11 @@ public final class LookupValuesList
 		return valuesById.values();
 	}
 
+	public Stream<LookupValue> stream()
+	{
+		return getValues().stream();
+	}
+
 	/**
 	 * @return debug properties or empty map; never returns null
 	 */
@@ -249,5 +271,54 @@ public final class LookupValuesList
 				.skip(offsetEffective)
 				.limit(maxSizeEffective)
 				.collect(collect(debugProperties));
+	}
+
+	public LookupValuesList addIfAbsent(@NonNull final LookupValue lookupValue)
+	{
+		if (valuesById.containsKey(lookupValue.getId()))
+		{
+			return this;
+		}
+		else
+		{
+			final ImmutableMap<Object, LookupValue> valuesByIdNew = ImmutableMap.<Object, LookupValue> builder()
+					.putAll(valuesById)
+					.put(lookupValue.getId(), lookupValue)
+					.build();
+			return new LookupValuesList(valuesByIdNew, debugProperties);
+		}
+	}
+
+	/**
+	 * Creates and returns a new {@link LookupValuesList} which contains the lookup values from this list but without the lookup values from <code>valuesToRemove</code>.
+	 * The values will be matched by ID only. The display name will be ignored.
+	 */
+	public LookupValuesList removeAll(final LookupValuesList valuesToRemove)
+	{
+		// If nothing to remove, we can return this
+		if (valuesToRemove.isEmpty())
+		{
+			return this;
+		}
+
+		// If this list is empty, we can return it
+		if (valuesById.isEmpty())
+		{
+			return this;
+		}
+
+		// Create a new values map which does not contain the the values to be removed
+		final ImmutableMap<Object, LookupValue> valuesByIdNew = valuesById.entrySet().stream()
+				.filter(entry -> !valuesToRemove.containsId(entry.getKey()))
+				.collect(GuavaCollectors.toImmutableMap());
+
+		// If nothing was filtered out, we can return this
+		if (valuesById.size() == valuesByIdNew.size())
+		{
+			return this;
+		}
+
+		//
+		return new LookupValuesList(valuesByIdNew, debugProperties);
 	}
 }

@@ -1,12 +1,6 @@
-package de.metas.ui.web.mail;
+package de.metas.ui.web.login.exceptions;
 
-import de.metas.ui.web.window.datatypes.DocumentPath;
-import de.metas.ui.web.window.datatypes.LookupValue;
-import de.metas.ui.web.window.datatypes.LookupValuesList;
-import lombok.Builder;
-import lombok.Builder.Default;
-import lombok.NonNull;
-import lombok.Value;
+import org.adempiere.exceptions.AdempiereException;
 
 /*
  * #%L
@@ -30,23 +24,12 @@ import lombok.Value;
  * #L%
  */
 
-@Builder(toBuilder = true)
-@Value
-public class WebuiEmail
+public class NotLoggedInAsSysAdminException extends AdempiereException
 {
-	@NonNull
-	private final String emailId;
-	private final int ownerUserId;
-	
-	private final LookupValue from;
-	@Default
-	private final LookupValuesList to = LookupValuesList.EMPTY;
-	private final String subject;
-	private final String message;
-	@Default
-	private final LookupValuesList attachments = LookupValuesList.EMPTY;
-	
-	private final boolean sent;
-	
-	private final DocumentPath contextDocumentPath;
+	private static final long serialVersionUID = -2528134231184643520L;
+
+	public NotLoggedInAsSysAdminException()
+	{
+		super("not logged in as System Administrator");
+	}
 }

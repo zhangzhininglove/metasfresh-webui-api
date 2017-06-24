@@ -1,11 +1,12 @@
-package de.metas.ui.web.mail.json;
+package de.metas.ui.web.dashboard.json;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
-import de.metas.ui.web.window.datatypes.json.JSONDocumentPath;
+import de.metas.ui.web.dashboard.KPI;
+import de.metas.ui.web.dashboard.KPIChartType;
+import de.metas.ui.web.window.datatypes.json.JSONOptions;
+import lombok.Builder;
 import lombok.Value;
 
 /*
@@ -21,25 +22,30 @@ import lombok.Value;
  * 
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public
- * License along with this program.  If not, see
+ * License along with this program. If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
  * #L%
  */
 
 @JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, isGetterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
+@Builder
 @Value
-public class JSONEmailRequest
+public class JsonKPI
 {
-	@JsonProperty("documentPath")
-	private final JSONDocumentPath documentPath;
-
-	@JsonCreator
-	private JSONEmailRequest(@JsonProperty("documentPath") final JSONDocumentPath documentPath)
+	public static final JsonKPI of(final KPI kpi, final JSONOptions jsonOpts)
 	{
-		this.documentPath = documentPath;
+		return JsonKPI.builder()
+				.kpiId(kpi.getId())
+				.caption(kpi.getCaption(jsonOpts.getAD_Language()))
+				.chartType(kpi.getChartType())
+				.build();
 	}
+
+	private final int kpiId;
+	private final String caption;
+	private final KPIChartType chartType;
 }

@@ -31,7 +31,6 @@ import org.compiere.util.Env;
 import org.compiere.util.Evaluatees;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Repository;
 
 import com.google.common.base.Joiner;
@@ -53,6 +52,7 @@ import de.metas.ui.web.board.json.events.JSONBoardChangedEventsList.JSONBoardCha
 import de.metas.ui.web.board.json.events.JSONBoardLaneChangedEvent;
 import de.metas.ui.web.exceptions.EntityNotFoundException;
 import de.metas.ui.web.websocket.WebSocketConfig;
+import de.metas.ui.web.websocket.WebsocketSender;
 import de.metas.ui.web.window.datatypes.DocumentId;
 import de.metas.ui.web.window.datatypes.DocumentPath;
 import de.metas.ui.web.window.datatypes.LookupValue;
@@ -103,7 +103,7 @@ public class BoardDescriptorRepository
 	private DocumentDescriptorFactory documentDescriptors;
 
 	@Autowired
-	private SimpMessagingTemplate websocketMessagingTemplate;
+	private WebsocketSender websocketSender;
 
 	private final CCache<Integer, BoardDescriptor> boardDescriptors = CCache.<Integer, BoardDescriptor> newCache(I_WEBUI_Board.Table_Name + "#BoardDescriptor", 50, 0)
 			.addResetForTableName(I_WEBUI_Board_Lane.Table_Name)
@@ -117,7 +117,7 @@ public class BoardDescriptorRepository
 		}
 
 		final String websocketEndpoint = board.getWebsocketEndpoint();
-		websocketMessagingTemplate.convertAndSend(websocketEndpoint, events);
+		websocketSender.convertAndSend(websocketEndpoint, events);
 		logger.trace("Notified WS {}: {}", websocketEndpoint, events);
 	}
 
@@ -297,7 +297,7 @@ public class BoardDescriptorRepository
 					.append("\n, u." + I_AD_User.COLUMNNAME_Avatar_ID + " AS card$user_avatar_id")
 					.append("\n, u." + I_AD_User.COLUMNNAME_Name + " AS card$user_fullname")
 					//
-					.append("\n, r.*") // all exported document fields
+					.append("\n, " + tableAlias + ".*") // all exported document fields
 					//
 					.append("\n FROM ").append(I_WEBUI_Board_RecordAssignment.Table_Name).append(" a")
 					.append("\n INNER JOIN (").append(sqlSelectDocument).append(") " + tableAlias + " ON (" + keyColumnNameFQ + " =a." + I_WEBUI_Board_RecordAssignment.COLUMNNAME_Record_ID + ")")
@@ -311,6 +311,48 @@ public class BoardDescriptorRepository
 				sqlExpr.append("\n AND " + I_WEBUI_Board_RecordAssignment.COLUMNNAME_Record_ID + "=?");
 				sqlParams.add(cardId);
 			}
+		}
+
+		final String sql = sqlExpr.build().evaluate(Evaluatees.empty(), OnVariableNotFound.Fail);
+
+		return retrieveCardsFromSql(sql, sqlParams, boardDescriptor);
+	}
+
+	public List<BoardCard> retrieveCardCandidates(final int boardId, final List<Integer> cardIds)
+	{
+		final BoardDescriptor boardDescriptor = getBoardDescriptor(boardId);
+
+		final String keyColumnName = boardDescriptor.getKeyColumnName();
+		final String userIdColumnName = boardDescriptor.getUserIdColumnName();
+
+		//
+		final List<Object> sqlParams = new ArrayList<>();
+		final CompositeStringExpression.Builder sqlExpr;
+		{
+			final IStringExpression sqlSelectDocument = buildSqlSelectDocument(boardDescriptor);
+
+			final String tableAlias = "r";
+			final String keyColumnNameFQ = tableAlias + "." + keyColumnName;
+			final String userIdColumnNameFQ = tableAlias + "." + userIdColumnName;
+			final SqlLookupDescriptor documentLookup = SqlLookupDescriptor.cast(boardDescriptor.getDocumentLookupDescriptorProvider().provideForScope(LookupScope.DocumentField));
+
+			sqlExpr = IStringExpression.composer()
+					.append("SELECT ")
+					.append("\n  NULL AS " + I_WEBUI_Board_RecordAssignment.COLUMNNAME_WEBUI_Board_Lane_ID)
+					.append("\n, " + keyColumnNameFQ + " AS " + I_WEBUI_Board_RecordAssignment.COLUMNNAME_Record_ID)
+					.append("\n, (").append(documentLookup.getSqlForFetchingDisplayNameByIdExpression(keyColumnNameFQ)).append(") AS card$caption")
+					//
+					.append("\n, u." + I_AD_User.COLUMNNAME_AD_User_ID + " AS card$user_id")
+					.append("\n, u." + I_AD_User.COLUMNNAME_Avatar_ID + " AS card$user_avatar_id")
+					.append("\n, u." + I_AD_User.COLUMNNAME_Name + " AS card$user_fullname")
+					//
+					.append("\n, " + tableAlias + ".*") // all exported document fields
+					//
+					.append("\n FROM (").append(sqlSelectDocument).append(") " + tableAlias)
+					.append("\n LEFT OUTER JOIN " + I_AD_User.Table_Name + " u ON (u." + I_AD_User.COLUMNNAME_AD_User_ID + " = " + userIdColumnNameFQ + ")");
+
+			sqlExpr.append("\n WHERE ")
+					.append("\n " + DB.buildSqlList(keyColumnNameFQ, cardIds, sqlParams));
 		}
 
 		final String sql = sqlExpr.build().evaluate(Evaluatees.empty(), OnVariableNotFound.Fail);

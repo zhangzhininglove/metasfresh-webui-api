@@ -9,7 +9,6 @@ import org.adempiere.ad.dao.IQueryFilter;
 import org.adempiere.ad.dao.ISqlQueryFilter;
 import org.adempiere.model.PlainContextAware;
 import org.adempiere.util.Services;
-import org.adempiere.util.api.IMsgBL;
 import org.compiere.util.CCache;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
@@ -20,6 +19,7 @@ import com.google.common.collect.ImmutableList;
 
 import de.metas.handlingunits.IHandlingUnitsDAO;
 import de.metas.handlingunits.model.I_M_HU;
+import de.metas.i18n.IMsgBL;
 import de.metas.i18n.ITranslatableString;
 import de.metas.ui.web.document.filter.DocumentFilter;
 import de.metas.ui.web.document.filter.DocumentFilterDescriptor;
@@ -27,6 +27,7 @@ import de.metas.ui.web.document.filter.DocumentFilterParamDescriptor;
 import de.metas.ui.web.document.filter.ImmutableDocumentFilterDescriptorsProvider;
 import de.metas.ui.web.document.filter.json.JSONDocumentFilter;
 import de.metas.ui.web.document.filter.sql.SqlDocumentFilterConverter;
+import de.metas.ui.web.document.filter.sql.SqlParamsCollector;
 import de.metas.ui.web.view.CreateViewRequest;
 import de.metas.ui.web.view.IViewFactory;
 import de.metas.ui.web.view.SqlViewFactory;
@@ -324,7 +325,7 @@ public class HUEditorViewFactory implements IViewFactory
 		}
 
 		@Override
-		public String getSql(final List<Object> sqlParamsOut, final DocumentFilter filter)
+		public String getSql(final SqlParamsCollector sqlParamsOut, final DocumentFilter filter)
 		{
 			final Object barcodeObj = filter.getParameter(PARAM_Barcode).getValue();
 			if (barcodeObj == null)
@@ -347,7 +348,7 @@ public class HUEditorViewFactory implements IViewFactory
 			final String sql = sqlQueryFilter.getSql();
 			final List<Object> sqlParams = sqlQueryFilter.getSqlParams(Env.getCtx());
 
-			sqlParamsOut.addAll(sqlParams);
+			sqlParamsOut.collectAll(sqlParams);
 			return sql;
 		}
 	}

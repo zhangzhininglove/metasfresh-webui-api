@@ -1,10 +1,6 @@
 package de.metas.ui.web.mail;
 
-import de.metas.ui.web.window.datatypes.DocumentPath;
-import de.metas.ui.web.window.datatypes.LookupValue;
-import de.metas.ui.web.window.datatypes.LookupValuesList;
 import lombok.Builder;
-import lombok.Builder.Default;
 import lombok.NonNull;
 import lombok.Value;
 
@@ -30,23 +26,12 @@ import lombok.Value;
  * #L%
  */
 
-@Builder(toBuilder = true)
 @Value
-public class WebuiEmail
+@Builder
+class WebuiEmailChangeResult
 {
 	@NonNull
-	private final String emailId;
-	private final int ownerUserId;
-	
-	private final LookupValue from;
-	@Default
-	private final LookupValuesList to = LookupValuesList.EMPTY;
-	private final String subject;
-	private final String message;
-	@Default
-	private final LookupValuesList attachments = LookupValuesList.EMPTY;
-	
-	private final boolean sent;
-	
-	private final DocumentPath contextDocumentPath;
+	private final WebuiEmail email;
+	@NonNull
+	private final WebuiEmail originalEmail;
 }

@@ -15,6 +15,7 @@ import org.adempiere.ad.dao.impl.TypedSqlQueryFilter;
 import org.adempiere.ad.expression.api.IExpressionEvaluator.OnVariableNotFound;
 import org.adempiere.ad.expression.api.IStringExpression;
 import org.adempiere.ad.trx.api.ITrx;
+import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.exceptions.DBException;
 import org.adempiere.model.PlainContextAware;
 import org.adempiere.util.Check;
@@ -31,6 +32,9 @@ import com.google.common.collect.ImmutableMap;
 import de.metas.logging.LogManager;
 import de.metas.ui.web.document.filter.DocumentFilter;
 import de.metas.ui.web.document.filter.DocumentFilterDescriptorsProvider;
+import de.metas.ui.web.document.filter.sql.SqlDocumentFilterConverter;
+import de.metas.ui.web.document.filter.sql.SqlDocumentFilterConverters;
+import de.metas.ui.web.document.filter.sql.SqlParamsCollector;
 import de.metas.ui.web.exceptions.EntityNotFoundException;
 import de.metas.ui.web.view.ViewRow.DefaultRowType;
 import de.metas.ui.web.view.descriptor.SqlViewBinding;
@@ -72,6 +76,7 @@ class SqlViewDataRepository implements IViewDataRepository
 	private final String tableName;
 	private final IStringExpression sqlSelectById;
 	private final IStringExpression sqlSelectByPage;
+	private final IStringExpression sqlSelectRowIdsByPage;
 	private final IStringExpression sqlSelectLinesByRowIds;
 	private final ViewRowIdsOrderedSelectionFactory viewRowIdsOrderedSelectionFactory;
 	private final DocumentFilterDescriptorsProvider viewFilterDescriptors;
@@ -80,11 +85,14 @@ class SqlViewDataRepository implements IViewDataRepository
 	private final String keyFieldName;
 	private final ImmutableMap<String, SqlViewRowFieldLoader> rowFieldLoaders;
 
+	private final SqlDocumentFilterConverter filterConverters;
+
 	SqlViewDataRepository(@NonNull final SqlViewBinding sqlBindings)
 	{
 		tableName = sqlBindings.getTableName();
 		sqlSelectById = sqlBindings.getSqlSelectById();
 		sqlSelectByPage = sqlBindings.getSqlSelectByPage();
+		sqlSelectRowIdsByPage = sqlBindings.getSqlSelectRowIdsByPage();
 		sqlSelectLinesByRowIds = sqlBindings.getSqlSelectLinesByRowIds();
 		viewFilterDescriptors = sqlBindings.getViewFilterDescriptors();
 		viewRowIdsOrderedSelectionFactory = SqlViewRowIdsOrderedSelectionFactory.of(sqlBindings);
@@ -106,6 +114,7 @@ class SqlViewDataRepository implements IViewDataRepository
 		this.keyFieldName = keyFieldName;
 		this.rowFieldLoaders = rowFieldLoaders.build();
 
+		this.filterConverters = SqlDocumentFilterConverters.createEntityBindingEffectiveConverter(sqlBindings);
 	}
 
 	@Override
@@ -123,9 +132,37 @@ class SqlViewDataRepository implements IViewDataRepository
 	}
 
 	@Override
-	public String getSqlWhereClause(final ViewId viewId, final DocumentIdsSelection rowIds)
+	public String getSqlWhereClause(final ViewId viewId, List<DocumentFilter> filters, final DocumentIdsSelection rowIds)
 	{
-		return viewRowIdsOrderedSelectionFactory.getSqlWhereClause(viewId, rowIds);
+		final StringBuilder sqlWhereClause = new StringBuilder();
+
+		// Convert filters to SQL
+		{
+			final String sqlFilters = filterConverters.getSql(SqlParamsCollector.notCollecting(), filters);
+			if (!Check.isEmpty(sqlFilters, true))
+			{
+				if (sqlWhereClause.length() > 0)
+				{
+					sqlWhereClause.append(" AND ");
+				}
+				sqlWhereClause.append("(").append(sqlFilters).append(")");
+			}
+		}
+		
+		// Filter by rowIds
+		{
+			final String sqlFilterByRowIds = viewRowIdsOrderedSelectionFactory.getSqlWhereClause(viewId, rowIds);
+			if(!Check.isEmpty(sqlFilterByRowIds, true))
+			{
+				if (sqlWhereClause.length() > 0)
+				{
+					sqlWhereClause.append(" AND ");
+				}
+				sqlWhereClause.append("(").append(sqlFilterByRowIds).append(")");
+			}
+		}
+		
+		return sqlWhereClause.toString();
 	}
 
 	@Override
@@ -320,6 +357,66 @@ class SqlViewDataRepository implements IViewDataRepository
 		}
 	}
 
+	@Override
+	public List<DocumentId> retrieveRowIdsByPage(final ViewEvaluationCtx viewEvalCtx, final ViewRowIdsOrderedSelection orderedSelection, final int firstRow, final int pageLength)
+	{
+		logger.debug("Getting page: firstRow={}, pageLength={} - {}", firstRow, pageLength, this);
+
+		Check.assume(firstRow >= 0, "firstRow >= 0 but it was {}", firstRow);
+		Check.assume(pageLength > 0, "pageLength > 0 but it was {}", pageLength);
+
+		SqlViewRowFieldLoader rowIdFieldLoader = rowFieldLoaders.get(keyFieldName);
+		if (rowIdFieldLoader == null)
+		{
+			throw new AdempiereException("No rowId loader found in " + this);
+		}
+
+		logger.debug("Using: {}", orderedSelection);
+		final ViewId viewId = orderedSelection.getViewId();
+		final String viewSelectionId = viewId.getViewId();
+
+		final int firstSeqNo = firstRow + 1; // NOTE: firstRow is 0-based while SeqNo are 1-based
+		final int lastSeqNo = firstRow + pageLength;
+
+		final String sql = sqlSelectRowIdsByPage.evaluate(viewEvalCtx.toEvaluatee(), OnVariableNotFound.Fail);
+		final Object[] sqlParams = new Object[] { viewSelectionId, firstSeqNo, lastSeqNo };
+		PreparedStatement pstmt = null;
+		ResultSet rs = null;
+		try
+		{
+			pstmt = DB.prepareStatement(sql, ITrx.TRXNAME_ThreadInherited);
+			pstmt.setMaxRows(pageLength);
+			DB.setParameters(pstmt, sqlParams);
+
+			rs = pstmt.executeQuery();
+
+			final ImmutableList.Builder<DocumentId> rowIds = ImmutableList.builder();
+			final String adLanguage = null; // N/A, not important
+
+			while (rs.next())
+			{
+				final Object rowIdObj = rowIdFieldLoader.retrieveValueAsJson(rs, adLanguage);
+				if (rowIdObj == null)
+				{
+					continue;
+				}
+
+				final DocumentId rowId = ViewRow.convertToRowId(rowIdObj);
+				rowIds.add(rowId);
+			}
+			return rowIds.build();
+		}
+		catch (final SQLException | DBException e)
+		{
+			throw DBException.wrapIfNeeded(e)
+					.setSqlIfAbsent(sql, sqlParams);
+		}
+		finally
+		{
+			DB.close(rs, pstmt);
+		}
+	}
+
 	private List<IViewRow> retrieveRowLines(final ViewEvaluationCtx viewEvalCtx, final ViewId viewId, final DocumentIdsSelection rowIds)
 	{
 		logger.debug("Getting row lines: rowId={} - {}", rowIds, this);
@@ -365,7 +462,8 @@ class SqlViewDataRepository implements IViewDataRepository
 			return ImmutableList.of();
 		}
 
-		final String sqlWhereClause = getSqlWhereClause(viewId, rowIds);
+		final List<DocumentFilter> filters = ImmutableList.of();
+		final String sqlWhereClause = getSqlWhereClause(viewId, filters, rowIds);
 		if (Check.isEmpty(sqlWhereClause, true))
 		{
 			logger.warn("Could get the SQL where clause for {}/{}. Returning empty", viewId, rowIds);
