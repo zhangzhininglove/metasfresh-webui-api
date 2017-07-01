@@ -1,12 +1,9 @@
-package de.metas.ui.web.dashboard.json;
+package de.metas.ui.web.board.json;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Builder.Default;
-import lombok.Getter;
 import lombok.Value;
 
 /*
@@ -34,33 +31,8 @@ import lombok.Value;
 @JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, isGetterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
 @Builder
 @Value
-public class JsonUserDashboardItemAddRequest
+public class JSONBoardCardOrderBy
 {
-	private final int kpiId;
-	@Default
-	private final int position = -1;
-
-	//
-	// Optional params
+	private final String fieldName;
 	private final String caption;
-	private final JSONInterval interval;
-	private final JSONWhen when;
-	
-	@AllArgsConstructor
-	@Getter
-	public static enum JSONInterval
-	{
-		week("P-7D");
-
-		private final String esTimeRange;
-	}
-
-	@AllArgsConstructor
-	@Getter
-	public static enum JSONWhen
-	{
-		now(null), lastWeek("P-7D");
-
-		private final String esTimeRangeEnd;
-	}
 }

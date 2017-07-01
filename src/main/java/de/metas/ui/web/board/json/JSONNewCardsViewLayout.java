@@ -1,12 +1,14 @@
-package de.metas.ui.web.dashboard.json;
+package de.metas.ui.web.board.json;
+
+import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
-import lombok.AllArgsConstructor;
+import de.metas.ui.web.document.filter.json.JSONDocumentFilterDescriptor;
 import lombok.Builder;
-import lombok.Builder.Default;
-import lombok.Getter;
+import lombok.Singular;
 import lombok.Value;
 
 /*
@@ -34,33 +36,25 @@ import lombok.Value;
 @JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, isGetterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
 @Builder
 @Value
-public class JsonUserDashboardItemAddRequest
+public class JSONNewCardsViewLayout
 {
-	private final int kpiId;
-	@Default
-	private final int position = -1;
-
-	//
-	// Optional params
+	@JsonInclude(JsonInclude.Include.NON_NULL)
 	private final String caption;
-	private final JSONInterval interval;
-	private final JSONWhen when;
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private final String description;
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private final String emptyResultText;
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private final String emptyResultHint;
+
+	@JsonInclude(JsonInclude.Include.NON_EMPTY)
+	@Singular
+	private final List<JSONDocumentFilterDescriptor> filters;
 	
-	@AllArgsConstructor
-	@Getter
-	public static enum JSONInterval
-	{
-		week("P-7D");
-
-		private final String esTimeRange;
-	}
-
-	@AllArgsConstructor
-	@Getter
-	public static enum JSONWhen
-	{
-		now(null), lastWeek("P-7D");
-
-		private final String esTimeRangeEnd;
-	}
+	@JsonInclude(JsonInclude.Include.NON_EMPTY)
+	@Singular
+	private final List<JSONBoardCardOrderBy> orderBys;
 }
