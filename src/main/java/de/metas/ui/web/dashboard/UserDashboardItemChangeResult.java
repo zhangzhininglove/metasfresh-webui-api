@@ -1,8 +1,11 @@
-package de.metas.ui.web.handlingunits;
+package de.metas.ui.web.dashboard;
 
-import de.metas.handlingunits.model.I_M_HU;
-import de.metas.handlingunits.model.I_M_HU_PI_Version;
-import de.metas.handlingunits.model.X_M_HU;
+import javax.annotation.Nullable;
+
+import com.google.common.collect.ImmutableList;
+
+import lombok.Builder;
+import lombok.Value;
 
 /*
  * #%L
@@ -26,19 +29,20 @@ import de.metas.handlingunits.model.X_M_HU;
  * #L%
  */
 
-public interface IHUEditorRow
+
+@Value
+@Builder
+public final class UserDashboardItemChangeResult
 {
-	String COLUMNNAME_M_HU_ID = I_M_HU.COLUMNNAME_M_HU_ID;
-	String COLUMNNAME_Value = I_M_HU.COLUMNNAME_Value;
-	String COLUMNNAME_HU_UnitType = I_M_HU_PI_Version.COLUMNNAME_HU_UnitType;
-	
-	String COLUMNNAME_HUStatus = I_M_HU.COLUMNNAME_HUStatus;
-	int HUSTATUS_AD_Reference_ID = X_M_HU.HUSTATUS_AD_Reference_ID;
+	private final int dashboardId;
+	private final DashboardWidgetType dashboardWidgetType;
+	private final int itemId;
 
-	String COLUMNNAME_PackingInfo = "PackingInfo";
+	@Nullable
+	private ImmutableList<Integer> dashboardOrderedItemIds;
 
-	String COLUMNNAME_M_Product_ID = "M_Product_ID";
-	String COLUMNNAME_QtyCU = "QtyCU";
-	String COLUMNNAME_C_UOM_ID = "C_UOM_ID";
-	
+	public boolean isPositionChanged()
+	{
+		return dashboardOrderedItemIds != null && !dashboardOrderedItemIds.isEmpty();
+	}
 }

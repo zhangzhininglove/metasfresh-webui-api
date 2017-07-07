@@ -42,7 +42,7 @@ import de.metas.printing.esb.base.util.Check;
 import de.metas.ui.web.base.model.I_WEBUI_Dashboard;
 import de.metas.ui.web.base.model.I_WEBUI_DashboardItem;
 import de.metas.ui.web.base.model.I_WEBUI_KPI;
-import de.metas.ui.web.window.datatypes.json.JSONPatchEvent;
+import de.metas.ui.web.dashboard.UserDashboardItemChangeResult.UserDashboardItemChangeResultBuilder;
 import lombok.NonNull;
 import lombok.Value;
 
@@ -288,47 +288,6 @@ public class UserDashboardRepository
 		return result.getValue();
 	}
 
-	public static enum DashboardPatchPath
-	{
-		orderedItemIds
-	};
-
-	public void changeDashboard(@NonNull final UserDashboard userDashboard, @NonNull final DashboardWidgetType widgetType, @NonNull final List<JSONPatchEvent<DashboardPatchPath>> events)
-	{
-		if (events.isEmpty())
-		{
-			throw new AdempiereException("no events");
-		}
-
-		final int dashboardId = userDashboard.getId();
-
-		//
-		// Extract change actions
-		final List<Runnable> changeActions = new ArrayList<>(events.size());
-		for (final JSONPatchEvent<DashboardPatchPath> event : events)
-		{
-			if (!event.isReplace())
-			{
-				throw new AdempiereException("Invalid event operation").setParameter("event", event);
-			}
-
-			final DashboardPatchPath path = event.getPath();
-			if (DashboardPatchPath.orderedItemIds.equals(path))
-			{
-				final List<Integer> orderItemIds = event.getValueAsIntegersList();
-				changeActions.add(() -> changeDashboardItemsOrder(dashboardId, widgetType, orderItemIds));
-			}
-			else
-			{
-				throw new AdempiereException("Unknown path").setParameter("event", event).setParameter("availablePaths", DashboardPatchPath.values());
-			}
-		}
-
-		//
-		// Execute the change actions
-		executeChangeActionsAndInvalidate(dashboardId, changeActions);
-	}
-
 	private void changeDashboardItemsOrder(final int dashboardId, final DashboardWidgetType dashboardWidgetType, final List<Integer> requestOrderedItemIds)
 	{
 		// Retrieve all itemIds ordered
@@ -413,7 +372,7 @@ public class UserDashboardRepository
 		return executeChangeActionAndInvalidateAndReturn(dashboardId, () -> {
 			//
 			// Create dashboard item in database (will be added last).
-			final int itemId = createAndSaveDashboardItem(dashboardId, request);
+			final int itemId = createUserDashboardItemAndSave(dashboardId, request);
 
 			//
 			// Calculate item's position
@@ -437,7 +396,7 @@ public class UserDashboardRepository
 		});
 	}
 
-	private int createAndSaveDashboardItem(final int dashboardId, @NonNull final UserDashboardItemAddRequest request)
+	private int createUserDashboardItemAndSave(final int dashboardId, @NonNull final UserDashboardItemAddRequest request)
 	{
 		//
 		// Get the KPI
@@ -490,17 +449,53 @@ public class UserDashboardRepository
 
 	public static enum DashboardItemPatchPath
 	{
-		caption, interval, when
+		caption, interval, when, position
 	}
 
-	public void changeUserDashboardItem(final UserDashboard dashboard, final UserDashboardItemChangeRequest request)
+	public UserDashboardItemChangeResult changeUserDashboardItem(final UserDashboard dashboard, final UserDashboardItemChangeRequest request)
 	{
-		dashboard.assertItemIdExists(request.getWidgetType(), request.getItemId());
 		final int dashboardId = dashboard.getId();
+		final DashboardWidgetType dashboardWidgetType = request.getWidgetType();
+		final int itemId = request.getItemId();
+
+		dashboard.assertItemIdExists(dashboardWidgetType, itemId);
 
 		//
 		// Execute the change request
-		executeChangeActionAndInvalidate(dashboardId, () -> changeUserDashboardItemAndSave(request));
+		return executeChangeActionAndInvalidateAndReturn(dashboardId, () -> {
+			final UserDashboardItemChangeResultBuilder resultBuilder = UserDashboardItemChangeResult.builder()
+					.dashboardId(dashboardId)
+					.dashboardWidgetType(dashboardWidgetType)
+					.itemId(itemId);
+
+			//
+			// Actually change the item content
+			changeUserDashboardItemAndSave(request);
+
+			//
+			// Change item's position
+			final int position = request.getPosition();
+			if (position >= 0)
+			{
+				final List<Integer> allItemIdsOrdered = new ArrayList<>(retrieveDashboardItemIdsOrdered(dashboardId, dashboardWidgetType));
+
+				if (position == Integer.MAX_VALUE || position > allItemIdsOrdered.size() - 1)
+				{
+					allItemIdsOrdered.remove((Object)itemId);
+					allItemIdsOrdered.add(itemId);
+				}
+				else
+				{
+					allItemIdsOrdered.remove((Object)itemId);
+					allItemIdsOrdered.add(position, itemId);
+				}
+
+				updateUserDashboardItemsOrder(dashboardId, allItemIdsOrdered);
+				resultBuilder.dashboardOrderedItemIds(ImmutableList.copyOf(allItemIdsOrdered));
+			}
+
+			return resultBuilder.build();
+		});
 	}
 
 	private List<Integer> retrieveDashboardItemIdsOrdered(final int dashboardId, final DashboardWidgetType dashboardWidgetType)
@@ -515,7 +510,6 @@ public class UserDashboardRepository
 				//
 				.create()
 				.listIds();
-
 	}
 
 	private final int retrieveLastSeqNo(final int dashboardId, final DashboardWidgetType dashboardWidgetType)
@@ -555,5 +549,4 @@ public class UserDashboardRepository
 			this.adClientId = adClientId < 0 ? -1 : adClientId;
 		}
 	}
-
 }

@@ -1,6 +1,5 @@
 package de.metas.ui.web.document.filter.json;
 
-import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,10 +43,9 @@ import de.metas.ui.web.document.filter.DocumentFilterParamDescriptor;
  * #L%
  */
 
-@SuppressWarnings("serial")
-@JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
+@JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, isGetterVisibility=Visibility.NONE, setterVisibility = Visibility.NONE)
 @lombok.Data
-public final class JSONDocumentFilter implements Serializable
+public final class JSONDocumentFilter
 {
 	public static List<DocumentFilter> unwrapList(final List<JSONDocumentFilter> jsonFilters, final DocumentFilterDescriptorsProvider filterDescriptorProvider)
 	{
@@ -172,6 +170,8 @@ public final class JSONDocumentFilter implements Serializable
 		return new JSONDocumentFilter(filterId, filter.getCaption(adLanguage), stickyFilter, jsonParameters);
 	}
 
+	// TODO: delete after https://github.com/metasfresh/metasfresh-webui-frontend/issues/948 
+	@Deprecated
 	public static final List<JSONDocumentFilter> ofStickyFiltersList(final List<DocumentFilter> filters, final String adLanguage)
 	{
 		if (filters == null || filters.isEmpty())
@@ -180,16 +180,29 @@ public final class JSONDocumentFilter implements Serializable
 		}
 
 		return filters.stream()
-				.map(filter -> ofStickyFilter(filter, adLanguage))
+				.map(filter -> ofStickyFilterOrNull(filter, adLanguage))
+				.filter(filter -> filter != null)
 				.collect(GuavaCollectors.toImmutableList());
 	}
 
-	public static final JSONDocumentFilter ofStickyFilter(final DocumentFilter filter, final String adLanguage)
+	// TODO: delete after https://github.com/metasfresh/metasfresh-webui-frontend/issues/948 
+	@Deprecated
+	private static final JSONDocumentFilter ofStickyFilterOrNull(final DocumentFilter filter, final String adLanguage)
 	{
+		// Don't expose the sticky filter if it does not have a caption,
+		// because usually that's an internal filter.
+		// (see https://github.com/metasfresh/metasfresh-webui-api/issues/481)
+		final String caption = filter.getCaption(adLanguage);
+		if(Check.isEmpty(caption, true))
+		{
+			return null;
+		}
+		
 		final String filterId = filter.getFilterId();
 		final boolean stickyFilter = true;
 		final List<JSONDocumentFilterParam> jsonParameters = ImmutableList.of(); // don't export the parameters
-		return new JSONDocumentFilter(filterId, filter.getCaption(adLanguage), stickyFilter, jsonParameters);
+		
+		return new JSONDocumentFilter(filterId, caption, stickyFilter, jsonParameters);
 	}
 
 	@JsonProperty("filterId")
@@ -199,7 +212,9 @@ public final class JSONDocumentFilter implements Serializable
 	@JsonInclude(JsonInclude.Include.NON_EMPTY)
 	private final String caption;
 
+	// TODO: delete after https://github.com/metasfresh/metasfresh-webui-frontend/issues/948 
 	@JsonProperty("static")
+	@Deprecated
 	private boolean stickyFilter;
 
 	@JsonProperty("parameters")
