@@ -467,12 +467,9 @@ public class WEBUI_M_HU_Transform
 			selectableTypes.add(ActionType.CU_To_NewCU.toString());
 			selectableTypes.add(ActionType.CU_To_NewTUs.toString());
 
-			final boolean existsTU = getView()
-					.streamAllRecursive()
-					.anyMatch(((Predicate<HUEditorRow>)row -> row.isTU())
-							.and(notAlreadyOurParent()));
-
-			if (existsTU)
+			final Predicate<HUEditorRow> predicate = ((Predicate<HUEditorRow>)row -> row.isTU())
+					.and(notAlreadyOurParent());
+			if (assumeHUExists(predicate))
 			{
 				selectableTypes.add(ActionType.CU_To_ExistingTU.toString());
 			}
@@ -484,12 +481,8 @@ public class WEBUI_M_HU_Transform
 			selectableTypes.add(ActionType.TU_To_NewLUs.toString());
 			selectableTypes.add(ActionType.TU_Set_Ownership.toString());
 
-			final boolean existsLU = getView()
-					.streamAllRecursive()
-					.anyMatch(((Predicate<HUEditorRow>)row -> row.isLU())
-							.and(notAlreadyOurParent()));
-
-			if (existsLU)
+			final Predicate<HUEditorRow> predicate = (Predicate<HUEditorRow>)row -> row.isLU();
+			if (assumeHUExists(predicate))
 			{
 				selectableTypes.add(ActionType.TU_To_ExistingLU.toString());
 			}
@@ -510,51 +503,78 @@ public class WEBUI_M_HU_Transform
 	}
 
 	/**
-	 * Needed when the selected action is {@link ActionType#CU_To_ExistingTU}.
+	 * Decides if we should assume that in our current view there exists at least one {@link HUEditorRow} that matches the given {@code predicate}.
+	 * If there are more than 50 row in our view, we don't check, and simply assume there should be at least one.
+	 * If there are 50 or less, we check, using the given {@code predicate}.
 	 *
-	 * @return existing TUs that are available in the current HU editor context, sorted by ID.
+	 * @param predicate
+	 * @return
 	 */
-	@ProcessParamLookupValuesProvider(parameterName = PARAM_M_TU_HU_ID, dependsOn = PARAM_Action, numericKey = true, lookupTableName = I_M_HU.Table_Name)
-	private LookupValuesList getTULookupValues()
+	private boolean assumeHUExists(final Predicate<HUEditorRow> predicate)
 	{
-		final ActionType actionType = p_Action == null ? null : ActionType.valueOf(p_Action);
-		if (actionType == ActionType.CU_To_ExistingTU)
+		final boolean assumeThatLUexists;
+		if (getView().size() > 50)
 		{
-			return getView()
-					.streamAllRecursive()
-					.filter(row -> row.isTU()) // ..needs to be a TU
-					.filter(notAlreadyOurParent()) // ..may not be the one TU that 'cu' is already attached to
-					.sorted(Comparator.comparing(HUEditorRow::getM_HU_ID))
-					.map(row -> row.toLookupValue())
-					.collect(LookupValuesList.collect());
+			assumeThatLUexists = true;
 		}
-
-		return LookupValuesList.EMPTY;
+		else
+		{
+			assumeThatLUexists = getView()
+					.streamAllRecursive()
+					.anyMatch(predicate
+							.and(notAlreadyOurParent()));
+		}
+		return assumeThatLUexists;
 	}
 
-	/**
-	 * Needed when the selected action is {@link ActionType#TU_To_ExistingLU}.
-	 *
-	 * @return existing LUs that are available in the current HU editor context, sorted by ID.
-	 */
-	@ProcessParamLookupValuesProvider(parameterName = PARAM_M_LU_HU_ID, dependsOn = PARAM_Action, numericKey = true, lookupTableName = I_M_HU.Table_Name)
-	private LookupValuesList getLULookupValues()
-	{
-		final ActionType actionType = p_Action == null ? null : ActionType.valueOf(p_Action);
-		if (actionType == ActionType.TU_To_ExistingLU)
-		{
-			return getView()
-					.streamAllRecursive()
-					.filter(row -> row.isLU()) // ..needs to be a LU
-					.filter(notAlreadyOurParent()) // ..may not be the one LU that 'tu' is already attached to
-					.sorted(Comparator.comparing(HUEditorRow::getM_HU_ID))
-					.sorted(Comparator.comparing(HUEditorRow::getM_HU_ID))
-					.map(row -> row.toLookupValue())
-					.collect(LookupValuesList.collect());
-		}
-
-		return LookupValuesList.EMPTY;
-	}
+	// @formatter:off
+//	/**
+//	 * Needed when the selected action is {@link ActionType#CU_To_ExistingTU}.
+//	 *
+//	 * @return existing TUs that are available in the current HU editor context, sorted by ID.
+//	 */
+//	@ProcessParamLookupValuesProvider(parameterName = PARAM_M_TU_HU_ID, dependsOn = PARAM_Action, numericKey = true, lookupTableName = I_M_HU.Table_Name)
+//	private LookupValuesList getTULookupValues()
+//	{
+//		final ActionType actionType = p_Action == null ? null : ActionType.valueOf(p_Action);
+//		if (actionType == ActionType.CU_To_ExistingTU)
+//		{
+//			return getView()
+//					.streamAllRecursive()
+//					.filter(row -> row.isTU()) // ..needs to be a TU
+//					.filter(notAlreadyOurParent()) // ..may not be the one TU that 'cu' is already attached to
+//					.sorted(Comparator.comparing(HUEditorRow::getM_HU_ID))
+//					.map(row -> row.toLookupValue())
+//					.collect(LookupValuesList.collect());
+//		}
+//
+//		return LookupValuesList.EMPTY;
+//	}
+//
+//	/**
+//	 * Needed when the selected action is {@link ActionType#TU_To_ExistingLU}.
+//	 *
+//	 * @return existing LUs that are available in the current HU editor context, sorted by ID.
+//	 */
+//	@ProcessParamLookupValuesProvider(parameterName = PARAM_M_LU_HU_ID, dependsOn = PARAM_Action, numericKey = true, lookupTableName = I_M_HU.Table_Name)
+//	private LookupValuesList getLULookupValues()
+//	{
+//		final ActionType actionType = p_Action == null ? null : ActionType.valueOf(p_Action);
+//		if (actionType == ActionType.TU_To_ExistingLU)
+//		{
+//			return getView()
+//					.streamAllRecursive()
+//					.filter(row -> row.isLU()) // ..needs to be a LU
+//					.filter(notAlreadyOurParent()) // ..may not be the one LU that 'tu' is already attached to
+//					.sorted(Comparator.comparing(HUEditorRow::getM_HU_ID))
+//					.sorted(Comparator.comparing(HUEditorRow::getM_HU_ID))
+//					.map(row -> row.toLookupValue())
+//					.collect(LookupValuesList.collect());
+//		}
+//
+//		return LookupValuesList.EMPTY;
+//	}
+	// @formatter:on
 
 	/**
 	 * Creates and returns a predicate to verify if a {@link HUEditorRow} is not the parent of the currently selected HU.
@@ -609,7 +629,8 @@ public class WEBUI_M_HU_Transform
 	 *
 	 * @return a list of HU PI items that link the currently selected TU with a TUperLU-qty and a LU packing instruction.
 	 */
-	@ProcessParamLookupValuesProvider(parameterName = PARAM_M_HU_PI_Item_ID, dependsOn = { PARAM_Action }, numericKey = true, lookupTableName = I_M_HU_PI_Item.Table_Name)
+	@ProcessParamLookupValuesProvider(parameterName = PARAM_M_HU_PI_Item_ID, dependsOn =
+		{ PARAM_Action }, numericKey = true, lookupTableName = I_M_HU_PI_Item.Table_Name)
 	private LookupValuesList getM_HU_PI_Item_ID()
 	{
 		final ActionType actionType = p_Action == null ? null : ActionType.valueOf(p_Action);
