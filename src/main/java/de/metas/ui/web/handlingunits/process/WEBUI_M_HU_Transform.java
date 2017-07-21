@@ -26,10 +26,12 @@ import org.compiere.util.Env;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 
+import com.google.common.collect.ImmutableSet;
+
 import de.metas.handlingunits.IHUPIItemProductDAO;
 import de.metas.handlingunits.IHandlingUnitsBL;
 import de.metas.handlingunits.IHandlingUnitsDAO;
-import de.metas.handlingunits.allocation.transfer.HUTransferService;
+import de.metas.handlingunits.allocation.transfer.HUTransformService;
 import de.metas.handlingunits.allocation.transfer.IHUSplitBuilder;
 import de.metas.handlingunits.model.I_M_HU;
 import de.metas.handlingunits.model.I_M_HU_PI;
@@ -210,13 +212,13 @@ public class WEBUI_M_HU_Transform
 		if (PARAM_QtyCU.equals(parameter.getColumnName()))
 		{
 			final I_M_HU cu = getSingleSelectedRow().getM_HU(); // should work, because otherwise the param is not even shown.
-			return HUTransferService.get(getCtx()).getMaximumQtyCU(cu);
+			return HUTransformService.get(getCtx()).getMaximumQtyCU(cu);
 		}
 
 		if (PARAM_QtyTU.equals(parameter.getColumnName()))
 		{
 			final I_M_HU tu = getSingleSelectedRow().getM_HU(); // should work, because otherwise the param is not even shown.
-			return HUTransferService.get(getCtx()).getMaximumQtyTU(tu);
+			return HUTransformService.get(getCtx()).getMaximumQtyTU(tu);
 		}
 
 		if (PARAM_HUPlanningReceiptOwnerPM_TU.equals(parameter.getColumnName()))
@@ -343,7 +345,7 @@ public class WEBUI_M_HU_Transform
 	 */
 	private void action_SplitCU_To_ExistingTU(final HUEditorRow cuRow, final I_M_HU tuHU, final BigDecimal qtyCU)
 	{
-		HUTransferService.get(getCtx())
+		HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.cuToExistingTU(cuRow.getM_HU(), qtyCU, tuHU);
 
@@ -361,7 +363,7 @@ public class WEBUI_M_HU_Transform
 	{
 
 		// TODO: if qtyCU is the "maximum", then don't do anything, but show a user message
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.cuToNewCU(cuRow.getM_HU(), qtyCU);
 
@@ -380,7 +382,7 @@ public class WEBUI_M_HU_Transform
 	private void action_SplitCU_To_NewTUs(
 			final HUEditorRow cuRow, final I_M_HU_PI_Item_Product tuPIItemProduct, final BigDecimal qtyCU, final boolean isOwnPackingMaterials)
 	{
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.cuToNewTUs(cuRow.getM_HU(), qtyCU, tuPIItemProduct, isOwnPackingMaterials);
 
@@ -394,12 +396,12 @@ public class WEBUI_M_HU_Transform
 	private void action_SplitTU_To_ExistingLU(
 			final HUEditorRow tuRow, final I_M_HU luHU, final BigDecimal qtyTU)
 	{
-		HUTransferService.get(getCtx())
+		HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.tuToExistingLU(tuRow.getM_HU(), qtyTU, luHU);
 
 		// Notify
-		getView().invalidateAll();
+		getView().removesHUIdsAndInvalidate(ImmutableSet.of(tuRow.getM_HU_ID()));
 	}
 
 	/**
@@ -414,11 +416,13 @@ public class WEBUI_M_HU_Transform
 	private void action_SplitTU_To_NewLU(
 			final HUEditorRow tuRow, final I_M_HU_PI_Item huPIItem, final BigDecimal qtyTU, final boolean isOwnPackingMaterials)
 	{
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.tuToNewLUs(tuRow.getM_HU(), qtyTU, huPIItem, isOwnPackingMaterials);
 
 		// Notify
+		// TODO check and remove the tuRow
+		getView().removesHUIdsAndInvalidate(ImmutableSet.of(tuRow.getM_HU_ID()));
 		getView().addHUsAndInvalidate(createdHUs);
 	}
 
@@ -435,7 +439,7 @@ public class WEBUI_M_HU_Transform
 		// TODO: if qtyTU is the "maximum", then don't do anything, but show a user message
 		final I_M_HU sourceTuHU = tuRow.getM_HU();
 
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.tuToNewTUs(sourceTuHU, qtyTU, sourceTuHU.isHUPlanningReceiptOwnerPM());
 
