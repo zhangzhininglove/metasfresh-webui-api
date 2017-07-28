@@ -37,7 +37,7 @@ import de.metas.ui.web.window.datatypes.json.JSONOptions;
 @JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
 public class JSONDashboardItem implements Serializable
 {
-	/* package */static final JSONDashboardItem of(final UserDashboardItem dashboardItem, final JSONOptions jsonOpts)
+	public static final JSONDashboardItem of(final UserDashboardItem dashboardItem, final JSONOptions jsonOpts)
 	{
 		return new JSONDashboardItem(dashboardItem, jsonOpts);
 	}
@@ -61,12 +61,22 @@ public class JSONDashboardItem implements Serializable
 	{
 		super();
 		id = dashboardItem.getId();
-		caption = dashboardItem.getCaption(jsonOpts.getAD_Language());
 		url = dashboardItem.getUrl();
 		seqNo = dashboardItem.getSeqNo();
 
 		final KPI kpi = dashboardItem.getKPI();
 		this.kpi = kpi == null ? null : JsonKPILayout.of(kpi, jsonOpts);
+
+		final String caption = dashboardItem.getCaption(jsonOpts.getAD_Language());
+		if (jsonOpts.isDebugShowColumnNamesForCaption())
+		{
+			this.caption = caption + " (" + id + ", kpiId=" + (kpi != null ? kpi.getId() : "-") + ")";
+		}
+		else
+		{
+			this.caption = caption;
+		}
+
 	}
 
 	public int getId()

@@ -6,30 +6,32 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.stream.Stream;
 
 import org.adempiere.ad.service.IADReferenceDAO;
 import org.adempiere.ad.service.IADReferenceDAO.ADRefListItem;
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.exceptions.FillMandatoryException;
 import org.adempiere.model.InterfaceWrapperHelper;
-import org.adempiere.service.ISysConfigBL;
 import org.adempiere.util.GuavaCollectors;
 import org.adempiere.util.Services;
 import org.adempiere.util.StringUtils;
 import org.adempiere.util.lang.impl.TableRecordReference;
 import org.compiere.Adempiere;
 import org.compiere.model.I_AD_Process_Para;
+import org.compiere.model.I_C_BPartner;
 import org.compiere.util.Env;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 
-import de.metas.handlingunits.IHUPIItemProductDAO;
+import com.google.common.collect.ImmutableSet;
+
+import de.metas.adempiere.model.I_M_Product;
 import de.metas.handlingunits.IHandlingUnitsBL;
 import de.metas.handlingunits.IHandlingUnitsDAO;
-import de.metas.handlingunits.allocation.transfer.HUTransferService;
+import de.metas.handlingunits.allocation.transfer.HUTransformService;
 import de.metas.handlingunits.allocation.transfer.IHUSplitBuilder;
 import de.metas.handlingunits.model.I_M_HU;
 import de.metas.handlingunits.model.I_M_HU_PI;
@@ -44,6 +46,7 @@ import de.metas.process.ProcessPreconditionsResolution;
 import de.metas.process.RunOutOfTrx;
 import de.metas.ui.web.WebRestApiApplication;
 import de.metas.ui.web.handlingunits.HUEditorRow;
+import de.metas.ui.web.handlingunits.util.WEBUI_ProcessHelper;
 import de.metas.ui.web.process.descriptor.ProcessParamLookupValuesProvider;
 import de.metas.ui.web.window.datatypes.LookupValue.IntegerLookupValue;
 import de.metas.ui.web.window.datatypes.LookupValue.StringLookupValue;
@@ -77,8 +80,6 @@ public class WEBUI_M_HU_Transform
 		extends HUEditorProcessTemplate
 		implements IProcessPrecondition, IProcessDefaultParametersProvider
 {
-	private static final String SYSCONFIG_ALLOW_INFINIT_CAPACITY_TUS = "de.metas.ui.web.handlingunits.process.WEBUI_M_HU_Transform.AllowNewTUsWithInfiniteCapacity";
-
 	/**
 	 *
 	 * Enumerates the actions supported by this process. There is an analog {@code AD_Ref_List} in the application dictionary. <b>Please keep it in sync</b>.
@@ -210,13 +211,13 @@ public class WEBUI_M_HU_Transform
 		if (PARAM_QtyCU.equals(parameter.getColumnName()))
 		{
 			final I_M_HU cu = getSingleSelectedRow().getM_HU(); // should work, because otherwise the param is not even shown.
-			return HUTransferService.get(getCtx()).getMaximumQtyCU(cu);
+			return HUTransformService.get(getCtx()).getMaximumQtyCU(cu);
 		}
 
 		if (PARAM_QtyTU.equals(parameter.getColumnName()))
 		{
 			final I_M_HU tu = getSingleSelectedRow().getM_HU(); // should work, because otherwise the param is not even shown.
-			return HUTransferService.get(getCtx()).getMaximumQtyTU(tu);
+			return HUTransformService.get(getCtx()).getMaximumQtyTU(tu);
 		}
 
 		if (PARAM_HUPlanningReceiptOwnerPM_TU.equals(parameter.getColumnName()))
@@ -343,12 +344,12 @@ public class WEBUI_M_HU_Transform
 	 */
 	private void action_SplitCU_To_ExistingTU(final HUEditorRow cuRow, final I_M_HU tuHU, final BigDecimal qtyCU)
 	{
-		HUTransferService.get(getCtx())
+		HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.cuToExistingTU(cuRow.getM_HU(), qtyCU, tuHU);
 
 		// Notify
-		getView().addHUAndInvalidate(tuHU);
+		getView().invalidateAll();
 	}
 
 	/**
@@ -361,7 +362,7 @@ public class WEBUI_M_HU_Transform
 	{
 
 		// TODO: if qtyCU is the "maximum", then don't do anything, but show a user message
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.cuToNewCU(cuRow.getM_HU(), qtyCU);
 
@@ -380,7 +381,7 @@ public class WEBUI_M_HU_Transform
 	private void action_SplitCU_To_NewTUs(
 			final HUEditorRow cuRow, final I_M_HU_PI_Item_Product tuPIItemProduct, final BigDecimal qtyCU, final boolean isOwnPackingMaterials)
 	{
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.cuToNewTUs(cuRow.getM_HU(), qtyCU, tuPIItemProduct, isOwnPackingMaterials);
 
@@ -394,12 +395,12 @@ public class WEBUI_M_HU_Transform
 	private void action_SplitTU_To_ExistingLU(
 			final HUEditorRow tuRow, final I_M_HU luHU, final BigDecimal qtyTU)
 	{
-		HUTransferService.get(getCtx())
+		HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.tuToExistingLU(tuRow.getM_HU(), qtyTU, luHU);
 
 		// Notify
-		getView().addHUAndInvalidate(luHU);
+		getView().removesHUIdsAndInvalidate(ImmutableSet.of(tuRow.getM_HU_ID()));
 	}
 
 	/**
@@ -414,11 +415,13 @@ public class WEBUI_M_HU_Transform
 	private void action_SplitTU_To_NewLU(
 			final HUEditorRow tuRow, final I_M_HU_PI_Item huPIItem, final BigDecimal qtyTU, final boolean isOwnPackingMaterials)
 	{
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.tuToNewLUs(tuRow.getM_HU(), qtyTU, huPIItem, isOwnPackingMaterials);
 
 		// Notify
+		// TODO check and remove the tuRow
+		getView().removesHUIdsAndInvalidate(ImmutableSet.of(tuRow.getM_HU_ID()));
 		getView().addHUsAndInvalidate(createdHUs);
 	}
 
@@ -435,7 +438,7 @@ public class WEBUI_M_HU_Transform
 		// TODO: if qtyTU is the "maximum", then don't do anything, but show a user message
 		final I_M_HU sourceTuHU = tuRow.getM_HU();
 
-		final List<I_M_HU> createdHUs = HUTransferService.get(getCtx())
+		final List<I_M_HU> createdHUs = HUTransformService.get(getCtx())
 				.withReferencedObjects(getM_ReceiptSchedules())
 				.tuToNewTUs(sourceTuHU, qtyTU, sourceTuHU.isHUPlanningReceiptOwnerPM());
 
@@ -582,23 +585,15 @@ public class WEBUI_M_HU_Transform
 
 	private LookupValuesList retrieveHUPItemProductsForNewTU()
 	{
-		final IHUPIItemProductDAO hupiItemProductDAO = Services.get(IHUPIItemProductDAO.class);
-		final ISysConfigBL sysConfigBL = Services.get(ISysConfigBL.class);
-
-		final boolean allowInfiniteCapacity = sysConfigBL.getBooleanValue(SYSCONFIG_ALLOW_INFINIT_CAPACITY_TUS, true,
-				Env.getAD_Client_ID(getCtx()), Env.getAD_Org_ID(getCtx()));
-
+		final Properties ctx = getCtx();
+		
 		final HUEditorRow cuRow = getSingleSelectedRow();
-
-		final Stream<I_M_HU_PI_Item_Product> stream = hupiItemProductDAO
-				.retrieveTUs(getCtx(), cuRow.getM_Product(), cuRow.getM_HU().getC_BPartner(), allowInfiniteCapacity)
-				.stream();
-
-		return stream
-				.sorted(Comparator.comparing(I_M_HU_PI_Item_Product::getName))
-				.map(huPIItemProduct -> IntegerLookupValue.of(huPIItemProduct.getM_HU_PI_Item_Product_ID(), huPIItemProduct.getName()))
-				.collect(LookupValuesList.collect());
+		final I_M_Product product = cuRow.getM_Product();
+		final I_C_BPartner bPartner = cuRow.getM_HU().getC_BPartner();
+		
+		return WEBUI_ProcessHelper.retrieveHUPIItemProducts(ctx, product, bPartner);
 	}
+
 
 	/**
 	 * Needed when the selected action is {@link ActionType#TU_To_NewLUs}.

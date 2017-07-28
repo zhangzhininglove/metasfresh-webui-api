@@ -21,7 +21,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.SimpMessageType;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.support.GenericMessage;
 import org.springframework.util.MimeType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,7 +51,10 @@ import de.metas.ui.web.process.ProcessRestController;
 import de.metas.ui.web.session.UserSession;
 import de.metas.ui.web.view.IViewsRepository;
 import de.metas.ui.web.view.ViewResult;
+import de.metas.ui.web.view.descriptor.annotation.ViewColumnHelper;
 import de.metas.ui.web.view.json.JSONViewResult;
+import de.metas.ui.web.websocket.WebsocketSender;
+import de.metas.ui.web.websocket.WebsocketSender.WebsocketEvent;
 import de.metas.ui.web.window.WindowConstants;
 import de.metas.ui.web.window.datatypes.WindowId;
 import de.metas.ui.web.window.model.DocumentCollection;
@@ -111,7 +113,7 @@ public class DebugRestController
 
 	@Autowired
 	@Lazy
-	private SimpMessagingTemplate websocketMessagingTemplate;
+	private WebsocketSender websocketSender;
 
 	@RequestMapping(value = "/cacheReset", method = RequestMethod.GET)
 	public void cacheReset()
@@ -120,6 +122,7 @@ public class DebugRestController
 		documentCollection.cacheReset();
 		menuTreeRepo.cacheReset();
 		processesController.cacheReset();
+		ViewColumnHelper.cacheReset();
 		Services.get(IUserRolePermissionsDAO.class).resetLocalCache();
 
 		System.gc();
@@ -168,7 +171,7 @@ public class DebugRestController
 	public List<JSONViewResult> getViewsList()
 	{
 		final String adLanguage = userSession.getAD_Language();
-		
+
 		return viewsRepo.getViews()
 				.stream()
 				.map(ViewResult::ofView)
@@ -240,7 +243,7 @@ public class DebugRestController
 				.put("contentType", new MimeType("application", "json", charset))
 				.build();
 		final Message<?> message = new GenericMessage<>(messageStr.getBytes(charset), headers);
-		websocketMessagingTemplate.send(endpoint, message);
+		websocketSender.send(endpoint, message);
 	}
 
 	@RequestMapping(value = "/sql/loadLimit/warn", method = RequestMethod.PUT)
@@ -291,8 +294,9 @@ public class DebugRestController
 
 	public static enum LoggingModule
 	{
-		websockets(de.metas.ui.web.websocket.WebSocketConfig.class.getPackage().getName()) //
-		, cache(
+		websockets(de.metas.ui.web.websocket.WebSocketConfig.class.getPackage().getName()),
+		view(de.metas.ui.web.view.IView.class.getPackage().getName()), 
+		cache(
 				org.compiere.util.CCache.class.getName() //
 				, org.compiere.util.CacheMgt.class.getName() //
 				, org.adempiere.ad.dao.cache.IModelCacheService.class.getName() // model caching
@@ -314,9 +318,9 @@ public class DebugRestController
 	}
 
 	@GetMapping("/logger/_setLevel/{level}")
-	public void setLoggerLevel(
-			@RequestParam("module") final LoggingModule module //
-			, @RequestParam(name = "loggerName", required = false) String loggerName //
+	public Set<String> setLoggerLevel(
+			@RequestParam(name="module", required=false) final LoggingModule module //
+			, @RequestParam(name = "loggerName", required = false) final String loggerName //
 			, @PathVariable("level") final String levelStr //
 	)
 	{
@@ -364,23 +368,39 @@ public class DebugRestController
 				throw new IllegalStateException("For some reason " + logger + " could not be set to level " + level);
 			}
 		}
+		
+		return loggerNamesEffective;
 	}
 
 	@GetMapping("http.cache.maxAge")
-	public Map<String, Object> setHttpCacheMaxAge(@RequestParam("value") @ApiParam("Cache-control's max age in seconds") int httpCacheMaxAge)
+	public Map<String, Object> setHttpCacheMaxAge(@RequestParam("value") @ApiParam("Cache-control's max age in seconds") final int httpCacheMaxAge)
 	{
 		final long httpCacheMaxAgeOld = userSession.getHttpCacheMaxAge();
 		userSession.setHttpCacheMaxAge(httpCacheMaxAge);
 		return ImmutableMap.of("value", httpCacheMaxAge, "valueOld", httpCacheMaxAgeOld);
 	}
-	
+
 	@GetMapping("http.use.AcceptLanguage")
-	public Map<String, Object> setUseHttpAcceptLanguage(@RequestParam("value") @ApiParam("Cache-control's max age in seconds") boolean useHttpAcceptLanguage)
+	public Map<String, Object> setUseHttpAcceptLanguage(@RequestParam("value") @ApiParam("Cache-control's max age in seconds") final boolean useHttpAcceptLanguage)
 	{
 		final boolean useHttpAcceptLanguageOld = userSession.isUseHttpAcceptLanguage();
 		userSession.setUseHttpAcceptLanguage(useHttpAcceptLanguage);
 		return ImmutableMap.of("value", useHttpAcceptLanguage, "valueOld", useHttpAcceptLanguageOld);
 	}
 
+	@GetMapping("websocketLogging")
+	public void setWebsocketLoggingConfig(
+			@RequestParam("enabled") final boolean enabled,
+			@RequestParam(value = "maxLoggedEvents", defaultValue = "500") final int maxLoggedEvents)
+	{
+		websocketSender.setLogEventsEnabled(enabled);
+		websocketSender.setLogEventsMaxSize(maxLoggedEvents);
+	}
+
+	@GetMapping("websocketEvents")
+	public List<WebsocketEvent> getWebsocketLoggedEvents(@RequestParam(value = "destinationFilter", required = false) final String destinationFilter)
+	{
+		return websocketSender.getLoggedEvents(destinationFilter);
+	}
 
 }

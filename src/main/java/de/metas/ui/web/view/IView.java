@@ -10,6 +10,7 @@ import org.compiere.util.Evaluatee;
 import com.google.common.collect.ImmutableList;
 
 import de.metas.i18n.ITranslatableString;
+import de.metas.process.RelatedProcessDescriptor;
 import de.metas.ui.web.document.filter.DocumentFilter;
 import de.metas.ui.web.exceptions.EntityNotFoundException;
 import de.metas.ui.web.process.view.ViewActionDescriptorsList;
@@ -61,6 +62,8 @@ public interface IView
 	 */
 	ViewId getParentViewId();
 
+	DocumentId getParentRowId();
+
 	/** @return true if this is an included view */
 	default boolean isIncludedView()
 	{
@@ -75,7 +78,17 @@ public interface IView
 
 	boolean isQueryLimitHit();
 
+	/**
+	 * NOTE: don't call this directly it shall be called by API.
+	 */
+	void invalidateAll();
+
 	ViewResult getPage(int firstRow, int pageLength, List<DocumentQueryOrderBy> orderBys);
+
+	default ViewResult getPageWithRowIdsOnly(int firstRow, int pageLength, List<DocumentQueryOrderBy> orderBys)
+	{
+		return getPage(firstRow, pageLength, orderBys);
+	}
 
 	IViewRow getById(DocumentId rowId) throws EntityNotFoundException;
 
@@ -123,5 +136,10 @@ public interface IView
 	default ViewActionDescriptorsList getActions()
 	{
 		return ViewActionDescriptorsList.EMPTY;
+	}
+
+	default List<RelatedProcessDescriptor> getAdditionalRelatedProcessDescriptors()
+	{
+		return ImmutableList.of();
 	}
 }

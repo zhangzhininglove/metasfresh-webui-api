@@ -1,21 +1,15 @@
 package de.metas.ui.web.window.controller;
 
 import java.util.List;
-import java.util.function.Function;
 
+import org.adempiere.ad.table.api.IADTableDAO;
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.util.Services;
-import org.adempiere.util.api.IMsgBL;
-import org.adempiere.util.lang.IPair;
-import org.adempiere.util.lang.ITableRecordReference;
-import org.adempiere.util.lang.ImmutablePair;
-import org.adempiere.util.lang.impl.TableRecordReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -28,9 +22,7 @@ import org.springframework.web.context.request.WebRequest;
 
 import com.google.common.collect.ImmutableList;
 
-import de.metas.adempiere.report.jasper.OutputType;
-import de.metas.process.ProcessExecutionResult;
-import de.metas.process.ProcessInfo;
+import de.metas.i18n.IMsgBL;
 import de.metas.ui.web.cache.ETagResponseEntityBuilder;
 import de.metas.ui.web.config.WebConfig;
 import de.metas.ui.web.exceptions.EntityNotFoundException;
@@ -41,6 +33,7 @@ import de.metas.ui.web.process.ProcessRestController;
 import de.metas.ui.web.process.descriptor.WebuiRelatedProcessDescriptor;
 import de.metas.ui.web.process.json.JSONDocumentActionsList;
 import de.metas.ui.web.session.UserSession;
+import de.metas.ui.web.websocket.WebsocketSender;
 import de.metas.ui.web.window.datatypes.DocumentPath;
 import de.metas.ui.web.window.datatypes.WindowId;
 import de.metas.ui.web.window.datatypes.json.JSONDocument;
@@ -56,12 +49,12 @@ import de.metas.ui.web.window.datatypes.json.JSONZoomInto;
 import de.metas.ui.web.window.descriptor.ButtonFieldActionDescriptor;
 import de.metas.ui.web.window.descriptor.DetailId;
 import de.metas.ui.web.window.descriptor.DocumentDescriptor;
-import de.metas.ui.web.window.descriptor.DocumentEntityDescriptor;
 import de.metas.ui.web.window.descriptor.DocumentFieldWidgetType;
 import de.metas.ui.web.window.descriptor.factory.NewRecordDescriptorsProvider;
 import de.metas.ui.web.window.exceptions.InvalidDocumentPathException;
 import de.metas.ui.web.window.model.Document;
 import de.metas.ui.web.window.model.DocumentCollection;
+import de.metas.ui.web.window.model.DocumentCollection.DocumentPrint;
 import de.metas.ui.web.window.model.DocumentQueryOrderBy;
 import de.metas.ui.web.window.model.DocumentReference;
 import de.metas.ui.web.window.model.DocumentReferencesService;
@@ -69,6 +62,7 @@ import de.metas.ui.web.window.model.IDocumentChangesCollector;
 import de.metas.ui.web.window.model.IDocumentChangesCollector.ReasonSupplier;
 import de.metas.ui.web.window.model.IDocumentFieldView;
 import de.metas.ui.web.window.model.NullDocumentChangesCollector;
+import de.metas.ui.web.window.model.lookup.DocumentZoomIntoInfo;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -125,7 +119,7 @@ public class WindowRestController
 	private MenuTreeRepository menuTreeRepository;
 
 	@Autowired
-	private SimpMessagingTemplate websocketMessagingTemplate;
+	private WebsocketSender websocketSender;
 
 	private JSONOptions.Builder newJSONOptions()
 	{
@@ -314,7 +308,7 @@ public class WindowRestController
 		final List<JSONDocument> jsonDocumentEvents = JSONDocument.ofEvents(changesCollector, jsonOpts);
 
 		// Extract and send websocket events
-		JSONDocument.extractAndSendWebsocketEvents(jsonDocumentEvents, websocketMessagingTemplate);
+		JSONDocument.extractAndSendWebsocketEvents(jsonDocumentEvents, websocketSender);
 
 		return jsonDocumentEvents;
 	}
@@ -507,7 +501,7 @@ public class WindowRestController
 		userSession.assertLoggedIn();
 
 		final IDocumentChangesCollector changesCollector = NullDocumentChangesCollector.instance;
-		final IPair<ITableRecordReference, WindowId> zoomIntoInfo = documentCollection.forDocumentReadonly(documentPath, changesCollector, document -> {
+		final DocumentZoomIntoInfo zoomIntoInfo = documentCollection.forDocumentReadonly(documentPath, changesCollector, document -> {
 			final IDocumentFieldView field = document.getFieldView(fieldName);
 
 			// Generic ZoomInto button
@@ -534,9 +528,8 @@ public class WindowRestController
 							.setParameter("zoomIntoTableIdFieldName", zoomIntoTableIdFieldName);
 				}
 
-				final ITableRecordReference recordRef = TableRecordReference.of(adTableId, recordId);
-				final WindowId windowId = null;
-				return ImmutablePair.of(recordRef, windowId);
+				final String tableName = Services.get(IADTableDAO.class).retrieveTableName(adTableId);
+				return DocumentZoomIntoInfo.of(tableName, recordId);
 			}
 			// Key Field
 			else if (field.isKey())
@@ -545,45 +538,63 @@ public class WindowRestController
 				// (see https://github.com/metasfresh/metasfresh/issues/1687 to understand the use-case)
 				final String tableName = document.getEntityDescriptor().getTableName();
 				final int recordId = document.getDocumentIdAsInt();
-				final ITableRecordReference recordRef = TableRecordReference.of(tableName, recordId);
-				final WindowId windowId = null;
-				return ImmutablePair.of(recordRef, windowId);
+				return DocumentZoomIntoInfo.of(tableName, recordId);
 			}
 			// Regular lookup value
 			else
 			{
-				final ITableRecordReference recordRef = field.getValueAs(ITableRecordReference.class);
-				final WindowId zoomIntoWindowId = field.getZoomIntoWindowId().orElse(null);
-				return ImmutablePair.of(recordRef, zoomIntoWindowId);
+				return field.getZoomIntoInfo();
 			}
 		});
 
-		final ITableRecordReference zoomInfoTableRecordRef = zoomIntoInfo.getLeft();
-		final WindowId zoomIntoWindowId = zoomIntoInfo.getRight();
-		if (zoomInfoTableRecordRef == null)
+		final JSONDocumentPath jsonZoomIntoDocumentPath;
+		if (zoomIntoInfo == null)
 		{
-			throw new EntityNotFoundException("Cannot zoom into empty fields")
+			throw new EntityNotFoundException("ZoomInto not supported")
 					.setParameter("documentPath", documentPath)
 					.setParameter("fieldName", fieldName);
 		}
+		else if (!zoomIntoInfo.isRecordIdPresent())
+		{
+			final WindowId windowId = documentCollection.getWindowId(zoomIntoInfo);
+			jsonZoomIntoDocumentPath = JSONDocumentPath.newWindowRecord(windowId);
+		}
+		else
+		{
+			final DocumentPath zoomIntoDocumentPath = documentCollection.getDocumentPath(zoomIntoInfo);
+			jsonZoomIntoDocumentPath = JSONDocumentPath.ofWindowDocumentPath(zoomIntoDocumentPath);
+		}
 
-		final DocumentPath zoomIntoDocumentPath = documentCollection.getDocumentPath(zoomInfoTableRecordRef, zoomIntoWindowId);
 		return JSONZoomInto.builder()
-				.documentPath(JSONDocumentPath.ofWindowDocumentPath(zoomIntoDocumentPath))
+				.documentPath(jsonZoomIntoDocumentPath)
 				.source(JSONDocumentPath.ofWindowDocumentPath(documentPath, fieldName))
 				.build();
 	}
 
 	@GetMapping("/{windowId}/{documentId}/actions")
+	public JSONDocumentActionsList getDocumentActions(@PathVariable("windowId") final String windowIdStr, @PathVariable("documentId") final String documentId)
+	{
+		final WindowId windowId = WindowId.fromJson(windowIdStr);
+		final DocumentPath documentPath = DocumentPath.rootDocumentPath(windowId, documentId);
+		return getDocumentActions(documentPath);
+	}
+
+	@GetMapping("/{windowId}/{documentId}/{tabId}/{rowId}/actions")
 	public JSONDocumentActionsList getDocumentActions(
-			@PathVariable("windowId") final String windowIdStr //
-			, @PathVariable("documentId") final String documentId //
-	)
+			@PathVariable("windowId") final String windowIdStr,
+			@PathVariable("documentId") final String documentIdStr,
+			@PathVariable("tabId") final String tabIdStr,
+			@PathVariable("rowId") final String rowIdStr)
+	{
+		final WindowId windowId = WindowId.fromJson(windowIdStr);
+		final DocumentPath documentPath = DocumentPath.includedDocumentPath(windowId, documentIdStr, tabIdStr, rowIdStr);
+		return getDocumentActions(documentPath);
+	}
+
+	private JSONDocumentActionsList getDocumentActions(final DocumentPath documentPath)
 	{
 		userSession.assertLoggedIn();
 
-		final WindowId windowId = WindowId.fromJson(windowIdStr);
-		final DocumentPath documentPath = DocumentPath.rootDocumentPath(windowId, documentId);
 		final IDocumentChangesCollector changesCollector = NullDocumentChangesCollector.instance;
 		return documentCollection.forDocumentReadonly(documentPath, changesCollector, document -> {
 			final DocumentPreconditionsAsContext preconditionsContext = DocumentPreconditionsAsContext.of(document);
@@ -593,6 +604,7 @@ public class WindowRestController
 					.collect(JSONDocumentActionsList.collect(newJSONOptions().build()));
 		});
 	}
+
 
 	@GetMapping(value = "/{windowId}/{documentId}/{tabId}/{rowId}/references")
 	public JSONDocumentReferencesGroup getDocumentReferences(
@@ -650,30 +662,9 @@ public class WindowRestController
 		final WindowId windowId = WindowId.fromJson(windowIdStr);
 		final DocumentPath documentPath = DocumentPath.rootDocumentPath(windowId, documentIdStr);
 
-		final IDocumentChangesCollector changesCollector = NullDocumentChangesCollector.instance;
-		final Document document = documentCollection.forDocumentReadonly(documentPath, changesCollector, Function.identity());
-		final int windowNo = document.getWindowNo();
-		final DocumentEntityDescriptor entityDescriptor = document.getEntityDescriptor();
-
-		final int printProcessId = entityDescriptor.getPrintProcessId();
-		final TableRecordReference recordRef = documentCollection.getTableRecordReference(documentPath);
-
-		final ProcessExecutionResult processExecutionResult = ProcessInfo.builder()
-				.setCtx(userSession.getCtx())
-				.setAD_Process_ID(printProcessId)
-				.setWindowNo(windowNo) // important: required for ProcessInfo.findReportingLanguage
-				.setRecord(recordRef)
-				.setPrintPreview(true)
-				.setJRDesiredOutputType(OutputType.PDF)
-				//
-				.buildAndPrepareExecution()
-				.onErrorThrowException()
-				.switchContextWhenRunning()
-				.executeSync()
-				.getResult();
-
-		final byte[] reportData = processExecutionResult.getReportData();
-		final String reportContentType = processExecutionResult.getReportContentType();
+		final DocumentPrint documentPrint = documentCollection.createDocumentPrint(documentPath);
+		final byte[] reportData = documentPrint.getReportData();
+		final String reportContentType = documentPrint.getReportContentType();
 
 		final HttpHeaders headers = new HttpHeaders();
 		headers.setContentType(MediaType.parseMediaType(reportContentType));

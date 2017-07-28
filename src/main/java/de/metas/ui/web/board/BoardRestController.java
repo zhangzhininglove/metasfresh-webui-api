@@ -1,9 +1,13 @@
 package de.metas.ui.web.board;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Predicate;
 
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.util.GuavaCollectors;
+import org.adempiere.util.comparator.FixedOrderByKeyComparator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,8 +16,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multimap;
 
 import de.metas.ui.web.board.BoardCardChangeRequest.BoardCardChangeRequestBuilder;
@@ -21,16 +27,29 @@ import de.metas.ui.web.board.json.JSONBoard;
 import de.metas.ui.web.board.json.JSONBoard.JSONBoardBuilder;
 import de.metas.ui.web.board.json.JSONBoardCard;
 import de.metas.ui.web.board.json.JSONBoardCardAddRequest;
+import de.metas.ui.web.board.json.JSONBoardCardOrderBy;
 import de.metas.ui.web.board.json.JSONBoardLane;
+import de.metas.ui.web.board.json.JSONNewCardsViewLayout;
 import de.metas.ui.web.config.WebConfig;
+import de.metas.ui.web.document.filter.json.JSONDocumentFilterDescriptor;
 import de.metas.ui.web.session.UserSession;
 import de.metas.ui.web.view.CreateViewRequest;
 import de.metas.ui.web.view.IView;
 import de.metas.ui.web.view.IViewsRepository;
+import de.metas.ui.web.view.ViewId;
 import de.metas.ui.web.view.ViewResult;
+import de.metas.ui.web.view.descriptor.ViewLayout;
+import de.metas.ui.web.view.json.JSONFilterViewRequest;
 import de.metas.ui.web.view.json.JSONViewDataType;
 import de.metas.ui.web.view.json.JSONViewResult;
+import de.metas.ui.web.window.datatypes.DocumentId;
+import de.metas.ui.web.window.datatypes.DocumentIdsSelection;
 import de.metas.ui.web.window.datatypes.json.JSONDocumentChangedEvent;
+import de.metas.ui.web.window.datatypes.json.JSONLookupValuesList;
+import de.metas.ui.web.window.datatypes.json.JSONOptions;
+import de.metas.ui.web.window.model.DocumentQueryOrderBy;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 
 /*
  * #%L
@@ -68,6 +87,11 @@ public class BoardRestController
 
 	@Autowired
 	private IViewsRepository viewsRepo;
+
+	private JSONOptions newJSONOptions()
+	{
+		return JSONOptions.builder(userSession).build();
+	}
 
 	@GetMapping("/{boardId}")
 	public JSONBoard getBoard(@PathVariable("boardId") final int boardId)
@@ -109,11 +133,29 @@ public class BoardRestController
 		return JSONBoardCard.of(card, userSession.getAD_Language());
 	}
 
-	@PostMapping("/{boardId}/card/{cardId}")
+	@GetMapping("/{boardId}/card/{cardId}")
 	public JSONBoardCard getCard(@PathVariable("boardId") final int boardId, @PathVariable("cardId") final int cardId)
 	{
+		userSession.assertLoggedIn();
+
 		final BoardCard card = boardsRepo.getCard(boardId, cardId);
 		return JSONBoardCard.of(card, userSession.getAD_Language());
+	}
+
+	@GetMapping("/{boardId}/card")
+	@ApiOperation("gets cards indexed by cardId")
+	public Map<Integer, JSONBoardCard> getCards(@PathVariable("boardId") final int boardId,
+			@RequestParam("cardIds") @ApiParam("comma separated cardIds") final String cardIdsListStr)
+	{
+		userSession.assertLoggedIn();
+
+		final Set<Integer> cardIds = DocumentIdsSelection.ofCommaSeparatedString(cardIdsListStr).toIntSet();
+		final List<BoardCard> cards = boardsRepo.getCards(boardId, cardIds);
+
+		final String adLanguage = userSession.getAD_Language();
+		return cards.stream()
+				.map(card -> JSONBoardCard.of(card, adLanguage))
+				.collect(GuavaCollectors.toImmutableMapByKey(JSONBoardCard::getCardId));
 	}
 
 	@DeleteMapping("/{boardId}/card/{cardId}")
@@ -152,7 +194,7 @@ public class BoardRestController
 			{
 				request.newLaneId(change.getValueAsInteger(-1));
 			}
-			if("position".equals(change.getPath()))
+			if ("position".equals(change.getPath()))
 			{
 				request.newPosition(change.getValueAsInteger(-1));
 			}
@@ -162,16 +204,136 @@ public class BoardRestController
 	}
 
 	@GetMapping("/{boardId}/newCardsView")
-	public JSONViewResult get(@PathVariable("boardId") final int boardId)
+	@Deprecated
+	public JSONViewResult createNewCardsView_DEPRECATED(@PathVariable("boardId") final int boardId)
+	{
+		return createNewCardsView(boardId);
+	}
+
+	@PostMapping("/{boardId}/newCardsView")
+	public JSONViewResult createNewCardsView(@PathVariable("boardId") final int boardId)
 	{
 		userSession.assertLoggedIn();
 
 		final BoardDescriptor boardDescriptor = boardsRepo.getBoardDescriptor(boardId);
 
 		final CreateViewRequest request = CreateViewRequest.builder(boardDescriptor.getDocumentWindowId(), JSONViewDataType.list)
-				// TODO: apply board's AD_Val_Rule_ID
+				.setStickyFilters(boardDescriptor.getDocumentFilters())
 				.build();
 		final IView view = viewsRepo.createView(request);
-		return JSONViewResult.of(ViewResult.ofView(view), userSession.getAD_Language());
+		return toJSONCardsViewResult(boardId, view, userSession.getAD_Language());
+	}
+
+	@GetMapping("/{boardId}/newCardsView/layout")
+	public JSONNewCardsViewLayout getNewCardsViewLayout(@PathVariable("boardId") final int boardId)
+	{
+		userSession.assertLoggedIn();
+
+		final BoardDescriptor boardDescriptor = boardsRepo.getBoardDescriptor(boardId);
+
+		final ViewLayout documentsViewLayout = viewsRepo.getViewLayout(boardDescriptor.getDocumentWindowId(), JSONViewDataType.list);
+
+		final JSONOptions jsonOpts = newJSONOptions();
+		final String adLanguage = jsonOpts.getAD_Language();
+		return JSONNewCardsViewLayout.builder()
+				.caption(documentsViewLayout.getCaption(adLanguage))
+				.description(documentsViewLayout.getDescription(adLanguage))
+				.emptyResultHint(documentsViewLayout.getEmptyResultHint(adLanguage))
+				.emptyResultText(documentsViewLayout.getEmptyResultText(adLanguage))
+				.filters(JSONDocumentFilterDescriptor.ofCollection(documentsViewLayout.getFilters(), jsonOpts))
+				.orderBys(boardDescriptor.getCardFields().stream()
+						.map(cardField -> JSONBoardCardOrderBy.builder()
+								.fieldName(cardField.getFieldName())
+								.caption(cardField.getCaption().translate(adLanguage))
+								.build())
+						.collect(ImmutableList.toImmutableList()))
+				.build();
+	}
+
+	@GetMapping("/{boardId}/newCardsView/{viewId}")
+	public JSONViewResult getNewCardsView(
+			@PathVariable("boardId") final int boardId,
+			@PathVariable("viewId") final String viewIdStr,
+			@RequestParam("firstRow") final int firstRow,
+			@RequestParam("pageLength") final int pageLength,
+			@RequestParam(name = "orderBy", required = false) final String orderBysListStr)
+	{
+		userSession.assertLoggedIn();
+
+		final ViewResult viewResult = viewsRepo.getView(viewIdStr)
+				.getPageWithRowIdsOnly(firstRow, pageLength, DocumentQueryOrderBy.parseOrderBysList(orderBysListStr));
+
+		final List<Integer> boardCardIds = boardsRepo.retrieveCardIds(boardId);
+
+		return toJSONCardsViewResult(boardId, viewResult,
+				userSession.getAD_Language(), // language
+				cardId -> !boardCardIds.contains(cardId) // filter out cards which already exist in our board
+		);
+	}
+
+	@PostMapping("/{boardId}/newCardsView/{viewId}/filter")
+	public JSONViewResult filterNewCardsView( //
+			@PathVariable("boardId") final int boardId,
+			@PathVariable("viewId") final String viewIdStr,
+			@RequestBody final JSONFilterViewRequest jsonRequest)
+	{
+		final ViewId viewId = ViewId.ofViewIdString(viewIdStr);
+
+		final IView newView = viewsRepo.filterView(viewId, jsonRequest);
+		return toJSONCardsViewResult(boardId, newView, userSession.getAD_Language());
+	}
+
+	@GetMapping("/{boardId}/newCardsView/{viewId}/filter/{filterId}/field/{parameterName}/typeahead")
+	public JSONLookupValuesList getFilterParameterTypeahead(
+			@PathVariable("boardId") final int boardId,
+			@PathVariable("viewId") final String viewIdStr,
+			@PathVariable("filterId") final String filterId,
+			@PathVariable("parameterName") final String parameterName,
+			@RequestParam(name = "query", required = true) final String query)
+	{
+		userSession.assertLoggedIn();
+
+		final ViewId viewId = ViewId.ofViewIdString(viewIdStr);
+		return viewsRepo.getView(viewId)
+				.getFilterParameterTypeahead(filterId, parameterName, query, userSession.toEvaluatee())
+				.transform(JSONLookupValuesList::ofLookupValuesList);
+	}
+
+	@GetMapping("/{boardId}/newCardsView/{viewId}/filter/{filterId}/field/{parameterName}/dropdown")
+	public JSONLookupValuesList getFilterParameterDropdown(
+			@PathVariable("boardId") final int boardId,
+			@PathVariable("viewId") final String viewIdStr,
+			@PathVariable("filterId") final String filterId,
+			@PathVariable("parameterName") final String parameterName)
+	{
+		userSession.assertLoggedIn();
+
+		final ViewId viewId = ViewId.ofViewIdString(viewIdStr);
+		return viewsRepo.getView(viewId)
+				.getFilterParameterDropdown(filterId, parameterName, userSession.toEvaluatee())
+				.transform(JSONLookupValuesList::ofLookupValuesList);
+	}
+
+	private final JSONViewResult toJSONCardsViewResult(final int boardId, final ViewResult viewResult, final String adLanguage, Predicate<Integer> cardIdFilter)
+	{
+		final List<Integer> cardIds = viewResult.getRowIds()
+				.stream()
+				.filter(DocumentId::isInt).map(DocumentId::toInt)
+				.filter(cardIdFilter)
+				.collect(ImmutableList.toImmutableList());
+
+		final List<JSONBoardCard> jsonCards = boardsRepo.retrieveCardCandidates(boardId, cardIds)
+				.stream()
+				.map(card -> JSONBoardCard.of(card, adLanguage))
+				.sorted(FixedOrderByKeyComparator.notMatchedAtTheEnd(cardIds, JSONBoardCard::getCardId))
+				.collect(ImmutableList.toImmutableList());
+
+		return JSONViewResult.of(viewResult, jsonCards, adLanguage);
+	}
+
+	private final JSONViewResult toJSONCardsViewResult(final int boardId, final IView view, final String adLanguage)
+	{
+		final ViewResult viewResult = ViewResult.ofView(view);
+		return JSONViewResult.of(viewResult, adLanguage);
 	}
 }

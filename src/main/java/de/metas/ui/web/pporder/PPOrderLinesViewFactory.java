@@ -18,9 +18,6 @@ import de.metas.ui.web.view.descriptor.ViewLayout;
 import de.metas.ui.web.view.json.JSONFilterViewRequest;
 import de.metas.ui.web.view.json.JSONViewDataType;
 import de.metas.ui.web.window.datatypes.WindowId;
-import de.metas.ui.web.window.descriptor.DocumentFieldWidgetType;
-import de.metas.ui.web.window.descriptor.DocumentLayoutElementDescriptor;
-import de.metas.ui.web.window.descriptor.DocumentLayoutElementFieldDescriptor;
 import de.metas.ui.web.window.descriptor.factory.standard.LayoutFactory;
 
 /*
@@ -60,6 +57,7 @@ public class PPOrderLinesViewFactory implements IViewFactory
 
 		return PPOrderLinesView.builder()
 				.parentViewId(request.getParentViewId())
+				.parentRowId(request.getParentRowId())
 				.viewId(viewId)
 				.viewType(request.getViewType())
 				.referencingDocumentPaths(request.getReferencingDocumentPaths())
@@ -74,6 +72,14 @@ public class PPOrderLinesViewFactory implements IViewFactory
 		throw new AdempiereException("View does not support filtering")
 				.setParameter("view", view)
 				.setParameter("filterViewRequest", filterViewRequest);
+	}
+
+	@Override
+	public IView deleteStickyFilter(final IView view, final String filterId)
+	{
+		throw new AdempiereException("View does not allow removing sticky/static filter")
+				.setParameter("view", view)
+				.setParameter("filterId", filterId);
 	}
 
 	@Override
@@ -100,34 +106,7 @@ public class PPOrderLinesViewFactory implements IViewFactory
 				.setHasTreeSupport(true)
 				.setHasIncludedViewSupport(true)
 				//
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setWidgetType(DocumentFieldWidgetType.Lookup)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IPPOrderBOMLine.COLUMNNAME_M_Product_ID)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IPPOrderBOMLine.COLUMNNAME_Value)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IPPOrderBOMLine.COLUMNNAME_Type)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IPPOrderBOMLine.COLUMNNAME_PackingInfo)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setWidgetType(DocumentFieldWidgetType.Quantity)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IPPOrderBOMLine.COLUMNNAME_QtyPlan)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setWidgetType(DocumentFieldWidgetType.Quantity)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IPPOrderBOMLine.COLUMNNAME_Qty)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setWidgetType(DocumentFieldWidgetType.Lookup)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IPPOrderBOMLine.COLUMNNAME_C_UOM_ID)))
+				.addElementsFromViewRowClass(PPOrderLineRow.class, JSONViewDataType.grid)
 				//
 				.build();
 	}

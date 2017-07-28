@@ -4,9 +4,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.annotation.concurrent.Immutable;
 
+import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.util.Check;
 
 import com.google.common.base.MoreObjects;
@@ -14,6 +16,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 
 import de.metas.ui.web.exceptions.EntityNotFoundException;
+import de.metas.ui.web.websocket.WebSocketConfig;
 
 /*
  * #%L
@@ -48,23 +51,31 @@ public final class UserDashboard
 	public static final UserDashboard EMPTY = new UserDashboard();
 
 	private final int id;
-	private final Map<Integer, UserDashboardItem> targetIndicatorItemsById;
-	private final Map<Integer, UserDashboardItem> kpiItemsById;
+	private final int adClientId;
+	private final Map<Integer, UserDashboardItem> _targetIndicatorItemsById;
+	private final Map<Integer, UserDashboardItem> _kpiItemsById;
+
+	private final String websocketEndpoint;
 
 	private UserDashboard(final Builder builder)
 	{
 		super();
 		id = builder.id;
-		targetIndicatorItemsById = Maps.uniqueIndex(builder.targetIndicatorItems, UserDashboardItem::getId);
-		kpiItemsById = Maps.uniqueIndex(builder.kpiItems, UserDashboardItem::getId);
+		adClientId = builder.adClientId;
+		_targetIndicatorItemsById = Maps.uniqueIndex(builder.targetIndicatorItems, UserDashboardItem::getId);
+		_kpiItemsById = Maps.uniqueIndex(builder.kpiItems, UserDashboardItem::getId);
+
+		websocketEndpoint = WebSocketConfig.TOPIC_Dashboard + "/" + id;
 	}
 
 	private UserDashboard()
 	{
 		super();
 		id = -1;
-		targetIndicatorItemsById = ImmutableMap.of();
-		kpiItemsById = ImmutableMap.of();
+		adClientId = -1;
+		_targetIndicatorItemsById = ImmutableMap.of();
+		_kpiItemsById = ImmutableMap.of();
+		websocketEndpoint = null;
 	}
 
 	@Override
@@ -73,8 +84,8 @@ public final class UserDashboard
 		return MoreObjects.toStringHelper(this)
 				.omitNullValues()
 				.add("id", id)
-				.add("targetIndicatorItems", targetIndicatorItemsById.isEmpty() ? null : targetIndicatorItemsById)
-				.add("kpiItemsById", kpiItemsById.isEmpty() ? null : kpiItemsById)
+				.add("targetIndicatorItems", _targetIndicatorItemsById.isEmpty() ? null : _targetIndicatorItemsById)
+				.add("kpiItemsById", _kpiItemsById.isEmpty() ? null : _kpiItemsById)
 				.toString();
 	}
 
@@ -83,39 +94,67 @@ public final class UserDashboard
 		return id;
 	}
 
-	public Collection<UserDashboardItem> getTargetIndicatorItems()
+	public int getAdClientId()
 	{
-		return targetIndicatorItemsById.values();
+		return adClientId;
 	}
 
-	public UserDashboardItem getTargetIndicatorItemById(final int itemId)
+	private Map<Integer, UserDashboardItem> getItemsById(final DashboardWidgetType widgetType)
 	{
-		final UserDashboardItem item = targetIndicatorItemsById.get(itemId);
+		if (widgetType == DashboardWidgetType.TargetIndicator)
+		{
+			return _targetIndicatorItemsById;
+		}
+		else if (widgetType == DashboardWidgetType.KPI)
+		{
+			return _kpiItemsById;
+		}
+		else
+		{
+			throw new AdempiereException("Unknown widget type: " + widgetType);
+		}
+	}
+
+	public Set<Integer> getItemIds(final DashboardWidgetType dashboardWidgetType)
+	{
+		return getItemsById(dashboardWidgetType).keySet();
+	}
+
+	public Collection<UserDashboardItem> getItems(final DashboardWidgetType dashboardWidgetType)
+	{
+		return getItemsById(dashboardWidgetType).values();
+	}
+
+	public UserDashboardItem getItemById(final DashboardWidgetType dashboardWidgetType, final int itemId)
+	{
+		final UserDashboardItem item = getItemsById(dashboardWidgetType).get(itemId);
 		if (item == null)
 		{
-			throw new IllegalArgumentException("No target indicator item found for " + itemId);
+			throw new EntityNotFoundException("No " + dashboardWidgetType + " item found")
+					.setParameter("itemId", itemId);
 		}
 		return item;
 	}
 
-	public Collection<UserDashboardItem> getKPIItems()
+	public void assertItemIdExists(final DashboardWidgetType dashboardWidgetType, final int itemId)
 	{
-		return kpiItemsById.values();
+		getItemById(dashboardWidgetType, itemId); // will fail if itemId does not exist
+	}
+	
+	public String getWebsocketEndpoint()
+	{
+		return websocketEndpoint;
 	}
 
-	public UserDashboardItem getKPIItemById(final int itemId)
-	{
-		final UserDashboardItem item = kpiItemsById.get(itemId);
-		if (item == null)
-		{
-			throw new EntityNotFoundException("No KPI item found for " + itemId);
-		}
-		return item;
-	}
-
+	//
+	//
+	//
+	//
+	//
 	public static final class Builder
 	{
 		private Integer id;
+		private Integer adClientId;
 		private final List<UserDashboardItem> targetIndicatorItems = new ArrayList<>();
 		private final List<UserDashboardItem> kpiItems = new ArrayList<>();
 
@@ -133,6 +172,12 @@ public final class UserDashboard
 		public Builder setId(final int id)
 		{
 			this.id = id;
+			return this;
+		}
+
+		public Builder setAdClientId(Integer adClientId)
+		{
+			this.adClientId = adClientId;
 			return this;
 		}
 

@@ -6,7 +6,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 
-import javax.annotation.Nullable;
+import javax.annotation.concurrent.Immutable;
 
 import org.adempiere.ad.expression.api.IExpressionEvaluator.OnVariableNotFound;
 import org.adempiere.ad.expression.api.ILogicExpression;
@@ -15,7 +15,6 @@ import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.model.RecordZoomWindowFinder;
 import org.adempiere.util.Check;
 import org.adempiere.util.lang.IAutoCloseable;
-import org.adempiere.util.lang.ITableRecordReference;
 import org.adempiere.util.lang.impl.TableRecordReference;
 import org.compiere.util.Evaluatee;
 import org.compiere.util.Evaluatees;
@@ -29,7 +28,10 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ImmutableList;
 
+import de.metas.adempiere.report.jasper.OutputType;
 import de.metas.logging.LogManager;
+import de.metas.process.ProcessExecutionResult;
+import de.metas.process.ProcessInfo;
 import de.metas.ui.web.exceptions.EntityNotFoundException;
 import de.metas.ui.web.session.UserSession;
 import de.metas.ui.web.window.WindowConstants;
@@ -44,8 +46,10 @@ import de.metas.ui.web.window.descriptor.factory.DocumentDescriptorFactory;
 import de.metas.ui.web.window.exceptions.DocumentNotFoundException;
 import de.metas.ui.web.window.exceptions.InvalidDocumentPathException;
 import de.metas.ui.web.window.model.Document.CopyMode;
-import groovy.transform.Immutable;
+import de.metas.ui.web.window.model.lookup.DocumentZoomIntoInfo;
+import lombok.Builder;
 import lombok.NonNull;
+import lombok.Value;
 
 /*
  * #%L
@@ -398,54 +402,55 @@ public class DocumentCollection
 		return documentDescriptorFactory.getTableRecordReference(documentPath);
 	}
 
-	/**
-	 * Retrieves document path for given table/recordId.
-	 *
-	 * @param tableRecordRef
-	 * @return document path; never returns null
-	 */
-	public DocumentPath getDocumentPath(@NonNull final ITableRecordReference tableRecordRef)
+	public WindowId getWindowId(@NonNull final DocumentZoomIntoInfo zoomIntoInfo)
 	{
-		final WindowId zoomIntoWindowId = null;
-		return getDocumentPath(tableRecordRef, zoomIntoWindowId);
+		if (zoomIntoInfo.getWindowId() != null)
+		{
+			return zoomIntoInfo.getWindowId();
+		}
+
+		final int zoomInto_adWindowId = RecordZoomWindowFinder.findAD_Window_ID(zoomIntoInfo.getTableName());
+		if (zoomInto_adWindowId <= 0)
+		{
+			throw new EntityNotFoundException("No windowId found")
+					.setParameter("zoomIntoInfo", zoomIntoInfo);
+		}
+
+		return WindowId.of(zoomInto_adWindowId);
+	}
+
+	public boolean isValidDocumentPath(final DocumentPath documentPath)
+	{
+		return documentPath != null
+				&& documentPath.getWindowId().isInt()
+				&& documentPath.getDocumentId().isInt();
 	}
 
 	/**
-	 * Retrieves document path for given table/recordId.
+	 * Retrieves document path for given ZoomInto info.
 	 *
-	 * @param tableRecordRef
-	 * @param zoomIntoWindowId optional WindowId to be used; if not provided, this method will search for it.
-	 * @return document path; never returns null
+	 * @param zoomIntoInfo
 	 */
-	public DocumentPath getDocumentPath(@NonNull final ITableRecordReference tableRecordRef, @Nullable final WindowId zoomIntoWindowId)
+	public DocumentPath getDocumentPath(@NonNull final DocumentZoomIntoInfo zoomIntoInfo)
 	{
-		//
-		// Find the root window ID
-		final WindowId zoomIntoWindowIdEffective;
-		if (zoomIntoWindowId == null)
+		if (!zoomIntoInfo.isRecordIdPresent())
 		{
-			final int zoomInto_adWindowId = RecordZoomWindowFinder.findAD_Window_ID(tableRecordRef);
-			if (zoomInto_adWindowId <= 0)
-			{
-				throw new EntityNotFoundException("No windowId found")
-						.setParameter("tableRecordRef", tableRecordRef);
-			}
-			zoomIntoWindowIdEffective = WindowId.of(zoomInto_adWindowId);
-		}
-		else
-		{
-			zoomIntoWindowIdEffective = zoomIntoWindowId;
+			throw new IllegalArgumentException("recordId must be set in " + zoomIntoInfo);
 		}
 
+		//
+		// Find the root window ID
+		final WindowId zoomIntoWindowIdEffective = getWindowId(zoomIntoInfo);
+
 		final DocumentEntityDescriptor rootEntityDescriptor = getDocumentEntityDescriptor(zoomIntoWindowIdEffective);
-		final String zoomIntoTableName = tableRecordRef.getTableName();
+		final String zoomIntoTableName = zoomIntoInfo.getTableName();
 
 		//
 		// We are dealing with a root document
 		// (i.e. root descriptor's table is matching record's table)
 		if (Objects.equals(rootEntityDescriptor.getTableName(), zoomIntoTableName))
 		{
-			final DocumentId rootDocumentId = DocumentId.of(tableRecordRef.getRecord_ID());
+			final DocumentId rootDocumentId = DocumentId.of(zoomIntoInfo.getRecordId());
 			return DocumentPath.rootDocumentPath(zoomIntoWindowIdEffective, rootDocumentId);
 		}
 		//
@@ -459,7 +464,7 @@ public class DocumentCollection
 			if (childEntityDescriptors.isEmpty())
 			{
 				throw new EntityNotFoundException("Cannot find the detail tab to zoom into")
-						.setParameter("tableRecordRef", tableRecordRef)
+						.setParameter("zoomIntoInfo", zoomIntoInfo)
 						.setParameter("zoomIntoWindowId", zoomIntoWindowIdEffective)
 						.setParameter("rootEntityDescriptor", rootEntityDescriptor);
 			}
@@ -471,13 +476,57 @@ public class DocumentCollection
 			final DocumentEntityDescriptor childEntityDescriptor = childEntityDescriptors.get(0);
 
 			// Find the root DocumentId
-			final DocumentId rowId = DocumentId.of(tableRecordRef.getRecord_ID());
+			final DocumentId rowId = DocumentId.of(zoomIntoInfo.getRecordId());
 			final DocumentId rootDocumentId = DocumentQuery.ofRecordId(childEntityDescriptor, rowId)
 					.retrieveParentDocumentId(rootEntityDescriptor);
 
 			//
 			return DocumentPath.includedDocumentPath(zoomIntoWindowIdEffective, rootDocumentId, childEntityDescriptor.getDetailId(), rowId);
 		}
+	}
+
+	public DocumentPrint createDocumentPrint(final DocumentPath documentPath)
+	{
+		final IDocumentChangesCollector changesCollector = NullDocumentChangesCollector.instance;
+		final Document document = forDocumentReadonly(documentPath, changesCollector, Function.identity());
+		final int windowNo = document.getWindowNo();
+		final DocumentEntityDescriptor entityDescriptor = document.getEntityDescriptor();
+
+		final int printProcessId = entityDescriptor.getPrintProcessId();
+		final TableRecordReference recordRef = getTableRecordReference(documentPath);
+
+		final ProcessExecutionResult processExecutionResult = ProcessInfo.builder()
+				.setCtx(userSession.getCtx())
+				.setAD_Process_ID(printProcessId)
+				.setWindowNo(windowNo) // important: required for ProcessInfo.findReportingLanguage
+				.setRecord(recordRef)
+				.setPrintPreview(true)
+				.setJRDesiredOutputType(OutputType.PDF)
+				//
+				.buildAndPrepareExecution()
+				.onErrorThrowException()
+				.switchContextWhenRunning()
+				.executeSync()
+				.getResult();
+
+		return DocumentPrint.builder()
+				.filename(processExecutionResult.getReportFilename())
+				.reportContentType(processExecutionResult.getReportContentType())
+				.reportData(processExecutionResult.getReportData())
+				.build();
+	}
+
+	@Immutable
+	@Value
+	@Builder
+	public static final class DocumentPrint
+	{
+		@NonNull
+		private final String filename;
+		@NonNull
+		private final String reportContentType;
+		@NonNull
+		private final byte[] reportData;
 	}
 
 	@Immutable

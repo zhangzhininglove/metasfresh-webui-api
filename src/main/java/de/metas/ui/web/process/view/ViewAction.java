@@ -8,6 +8,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import de.metas.process.ProcessPreconditionsResolution;
+import de.metas.ui.web.process.ProcessInstanceResult.ResultAction;
 import de.metas.ui.web.view.IView;
 import de.metas.ui.web.window.datatypes.DocumentIdsSelection;
 import de.metas.ui.web.window.datatypes.PanelLayoutType;
@@ -34,18 +35,42 @@ import de.metas.ui.web.window.datatypes.PanelLayoutType;
  * #L%
  */
 
+/**
+ * View action annotation.
+ * 
+ * Accepted arguments:
+ * <ul>
+ * <li>the {@link IView}
+ * <li>selected document ids: {@link DocumentIdsSelection}
+ * <li>parameter fields annotated with {@link ViewActionParam}
+ * </ul>
+ * 
+ * Accepted return types:
+ * <ul>
+ * <li><code>void</code>
+ * <li>{@link ResultAction} like "open included view", "open report" etc
+ * </ul>
+ * 
+ * @author metas-dev <dev@metasfresh.com>
+ *
+ */
 @Inherited
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ ElementType.METHOD })
 public @interface ViewAction
 {
+	/**
+	 * AD_Message.Value or the caption text
+	 * 
+	 * @return
+	 */
 	String caption();
 
 	String description() default "";
 
 	boolean defaultAction() default false;
-	
+
 	PanelLayoutType layoutType() default PanelLayoutType.Panel;
 
 	Class<? extends Precondition> precondition() default AlwaysAllowPrecondition.class;

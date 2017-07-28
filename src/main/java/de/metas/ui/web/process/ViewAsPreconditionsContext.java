@@ -14,6 +14,7 @@ import com.google.common.collect.ImmutableList;
 
 import de.metas.logging.LogManager;
 import de.metas.process.IProcessPreconditionsContext;
+import de.metas.process.RelatedProcessDescriptor;
 import de.metas.ui.web.view.IView;
 import de.metas.ui.web.window.datatypes.DocumentId;
 import de.metas.ui.web.window.datatypes.DocumentIdsSelection;
@@ -109,9 +110,15 @@ public class ViewAsPreconditionsContext implements WebuiPreconditionsContext
 	}
 	
 	@Override
+	public List<RelatedProcessDescriptor> getAdditionalRelatedProcessDescriptors()
+	{
+		return view.getAdditionalRelatedProcessDescriptors();
+	}
+	
+	@Override
 	public int getAD_Window_ID()
 	{
-		return windowId.toInt();
+		return windowId.toIntOr(-1);
 	}
 
 	@Override

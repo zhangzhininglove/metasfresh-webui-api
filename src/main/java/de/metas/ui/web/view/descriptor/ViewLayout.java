@@ -21,9 +21,15 @@ import de.metas.i18n.ImmutableTranslatableString;
 import de.metas.ui.web.cache.ETag;
 import de.metas.ui.web.cache.ETagAware;
 import de.metas.ui.web.document.filter.DocumentFilterDescriptor;
+import de.metas.ui.web.view.IViewRow;
+import de.metas.ui.web.view.descriptor.annotation.ViewColumnHelper;
+import de.metas.ui.web.view.json.JSONViewDataType;
 import de.metas.ui.web.window.datatypes.WindowId;
 import de.metas.ui.web.window.descriptor.DetailId;
 import de.metas.ui.web.window.descriptor.DocumentLayoutElementDescriptor;
+import de.metas.ui.web.window.descriptor.factory.standard.LayoutFactory;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /*
  * #%L
@@ -69,6 +75,7 @@ public class ViewLayout implements ETagAware
 
 	private final boolean hasAttributesSupport;
 	private final boolean hasIncludedViewSupport;
+	private final boolean hasIncludedViewOnSelectSupport;
 	private final String allowNewCaption;
 
 	private final boolean hasTreeSupport;
@@ -105,6 +112,8 @@ public class ViewLayout implements ETagAware
 		treeExpandedDepth = builder.treeExpandedDepth;
 
 		hasIncludedViewSupport = builder.hasIncludedViewSupport;
+		hasIncludedViewOnSelectSupport = builder.hasIncludedViewOnSelectSupport;
+		
 		allowNewCaption = null;
 
 		eTag = ETag.of(nextETagVersionSupplier.getAndIncrement(), extractETagAttributes(filters, allowNewCaption));
@@ -112,12 +121,13 @@ public class ViewLayout implements ETagAware
 
 	/** copy and override constructor */
 	private ViewLayout(final ViewLayout from,
+			final WindowId windowId,
 			final ImmutableList<DocumentFilterDescriptor> filters,
 			final String allowNewCaption,
 			final boolean hasTreeSupport, final boolean treeCollapsible, final int treeExpandedDepth)
 	{
 		super();
-		windowId = from.windowId;
+		this.windowId = windowId;
 		detailId = from.detailId;
 		caption = from.caption;
 		description = from.description;
@@ -134,7 +144,10 @@ public class ViewLayout implements ETagAware
 		this.hasTreeSupport = hasTreeSupport;
 		this.treeCollapsible = treeCollapsible;
 		this.treeExpandedDepth = treeExpandedDepth;
+		
 		hasIncludedViewSupport = from.hasIncludedViewSupport;
+		hasIncludedViewOnSelectSupport = from.hasIncludedViewOnSelectSupport;
+		
 		this.allowNewCaption = allowNewCaption;
 
 		eTag = from.eTag.overridingAttributes(extractETagAttributes(filters, allowNewCaption));
@@ -157,6 +170,11 @@ public class ViewLayout implements ETagAware
 				.add("elements", elements.isEmpty() ? null : elements)
 				.add("eTag", eTag)
 				.toString();
+	}
+
+	public ChangeBuilder toBuilder()
+	{
+		return new ChangeBuilder(this);
 	}
 
 	public WindowId getWindowId()
@@ -197,24 +215,10 @@ public class ViewLayout implements ETagAware
 	public ViewLayout withFiltersAndTreeSupport(final Collection<DocumentFilterDescriptor> filtersToSet,
 			final boolean hasTreeSupportToSet, final Boolean treeCollapsibleToSet, final Integer treeExpandedDepthToSet)
 	{
-		final ImmutableList<DocumentFilterDescriptor> filtersToSetEffective = filtersToSet != null ? ImmutableList.copyOf(filtersToSet) : ImmutableList.of();
-		final boolean treeCollapsibleEffective = treeCollapsibleToSet != null ? treeCollapsibleToSet.booleanValue() : treeCollapsible;
-		final int treeExpandedDepthEffective = treeExpandedDepthToSet != null ? treeExpandedDepthToSet.intValue() : treeExpandedDepth;
-
-		// If there will be no change then return this
-		if (Objects.equals(filters, filtersToSetEffective)
-				&& hasTreeSupport == hasTreeSupportToSet
-				&& treeCollapsible == treeCollapsibleEffective
-				&& treeExpandedDepth == treeExpandedDepthEffective)
-		{
-			return this;
-		}
-
-		// Create a copy of this layout and override what was required
-		return new ViewLayout(this,
-				filtersToSetEffective,
-				allowNewCaption,
-				hasTreeSupportToSet, treeCollapsibleEffective, treeExpandedDepthEffective);
+		return toBuilder()
+				.filters(filtersToSet)
+				.treeSupport(hasTreeSupportToSet, treeCollapsibleToSet, treeExpandedDepthToSet)
+				.build();
 	}
 
 	public ViewLayout withAllowNewRecordIfPresent(final Optional<String> allowNewCaption)
@@ -224,16 +228,9 @@ public class ViewLayout implements ETagAware
 			return this;
 		}
 
-		final String allowNewCaptionEffective = allowNewCaption.get();
-		if (Objects.equals(this.allowNewCaption, allowNewCaptionEffective))
-		{
-			return this;
-		}
-
-		return new ViewLayout(this,
-				filters,
-				allowNewCaptionEffective,
-				hasTreeSupport, treeCollapsible, treeExpandedDepth);
+		return toBuilder()
+				.allowNewCaption(allowNewCaption.get())
+				.build();
 	}
 
 	public List<DocumentLayoutElementDescriptor> getElements()
@@ -275,6 +272,11 @@ public class ViewLayout implements ETagAware
 	{
 		return hasIncludedViewSupport;
 	}
+	
+	public boolean isIncludedViewOnSelectSupport()
+	{
+		return hasIncludedViewOnSelectSupport;
+	}
 
 	public boolean isAllowNew()
 	{
@@ -295,19 +297,84 @@ public class ViewLayout implements ETagAware
 	//
 	//
 	//
+	//
+	//
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+	public static final class ChangeBuilder
+	{
+		private final ViewLayout from;
+		private WindowId windowId;
+		private Collection<DocumentFilterDescriptor> filters;
+		private String allowNewCaption;
+		private Boolean hasTreeSupport;
+		private Boolean treeCollapsible;
+		private Integer treeExpandedDepth;
+
+		public ViewLayout build()
+		{
+			final WindowId windowIdEffective = windowId != null ? windowId : from.windowId;
+			final ImmutableList<DocumentFilterDescriptor> filtersEffective = ImmutableList.copyOf(filters != null ? filters : from.getFilters());
+			final String allowNewCaptionEffective = allowNewCaption != null ? allowNewCaption : from.allowNewCaption;
+			final boolean hasTreeSupportEffective = hasTreeSupport != null ? hasTreeSupport.booleanValue() : from.hasTreeSupport;
+			final boolean treeCollapsibleEffective = treeCollapsible != null ? treeCollapsible.booleanValue() : from.treeCollapsible;
+			final int treeExpandedDepthEffective = treeExpandedDepth != null ? treeExpandedDepth.intValue() : from.treeExpandedDepth;
+
+			// If there will be no change then return this
+			if (Objects.equals(from.windowId, windowIdEffective)
+					&& Objects.equals(from.filters, filtersEffective)
+					&& Objects.equals(from.allowNewCaption, allowNewCaptionEffective)
+					&& from.hasTreeSupport == hasTreeSupportEffective
+					&& from.treeCollapsible == treeCollapsibleEffective
+					&& from.treeExpandedDepth == treeExpandedDepthEffective)
+			{
+				return from;
+			}
+
+			return new ViewLayout(from, windowIdEffective, filtersEffective, allowNewCaptionEffective, hasTreeSupportEffective, treeCollapsibleEffective, treeExpandedDepthEffective);
+		}
+
+		public ChangeBuilder windowId(WindowId windowId)
+		{
+			this.windowId = windowId;
+			return this;
+		}
+
+		public ChangeBuilder allowNewCaption(final String allowNewCaption)
+		{
+			this.allowNewCaption = allowNewCaption;
+			return this;
+		}
+
+		public ChangeBuilder filters(Collection<DocumentFilterDescriptor> filters)
+		{
+			this.filters = filters;
+			return this;
+		}
+
+		public ChangeBuilder treeSupport(final boolean hasTreeSupport, final Boolean treeCollapsible, final Integer treeExpandedDepth)
+		{
+			this.hasTreeSupport = hasTreeSupport;
+			this.treeCollapsible = treeCollapsible;
+			this.treeExpandedDepth = treeExpandedDepth;
+			return this;
+		}
+
+	}
+
 	public static final class Builder
 	{
-		public WindowId windowId;
+		private WindowId windowId;
 		private DetailId detailId;
 		private ITranslatableString caption;
 		private ITranslatableString description;
-		private ITranslatableString emptyResultText;
-		private ITranslatableString emptyResultHint;
+		private ITranslatableString emptyResultText = LayoutFactory.HARDCODED_TAB_EMPTY_RESULT_TEXT;
+		private ITranslatableString emptyResultHint = LayoutFactory.HARDCODED_TAB_EMPTY_RESULT_HINT;
 
 		private Collection<DocumentFilterDescriptor> filters = null;
 
 		private boolean hasAttributesSupport = false;
 		private boolean hasIncludedViewSupport = false;
+		private boolean hasIncludedViewOnSelectSupport = false;
 
 		private boolean hasTreeSupport = false;
 		private boolean treeCollapsible = false;
@@ -407,6 +474,13 @@ public class ViewLayout implements ETagAware
 			return this;
 		}
 
+		public <T extends IViewRow> Builder addElementsFromViewRowClass(final Class<T> viewRowClass, final JSONViewDataType viewType)
+		{
+			ViewColumnHelper.createLayoutElementsForClass(viewRowClass, viewType)
+					.forEach(this::addElement);
+			return this;
+		}
+
 		public boolean hasElements()
 		{
 			return !elementBuilders.isEmpty();
@@ -460,6 +534,12 @@ public class ViewLayout implements ETagAware
 		public Builder setHasIncludedViewSupport(final boolean hasIncludedViewSupport)
 		{
 			this.hasIncludedViewSupport = hasIncludedViewSupport;
+			return this;
+		}
+		
+		public Builder setHasIncludedViewOnSelectSupport(boolean hasIncludedViewOnSelectSupport)
+		{
+			this.hasIncludedViewOnSelectSupport = hasIncludedViewOnSelectSupport;
 			return this;
 		}
 

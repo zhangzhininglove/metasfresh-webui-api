@@ -14,6 +14,8 @@ import de.metas.inoutcandidate.model.I_M_Packageable_V;
 import de.metas.ui.web.document.filter.DocumentFilter;
 import de.metas.ui.web.document.filter.DocumentFilterDescriptor;
 import de.metas.ui.web.document.filter.DocumentFilterDescriptorsProvider;
+import de.metas.ui.web.picking.PickingConstants;
+import de.metas.ui.web.view.CreateViewRequest.DocumentFiltersList;
 import de.metas.ui.web.view.descriptor.SqlViewBinding;
 import de.metas.ui.web.view.descriptor.SqlViewGroupingBinding;
 import de.metas.ui.web.view.descriptor.SqlViewRowFieldBinding;
@@ -104,24 +106,35 @@ public class SqlViewFactory implements IViewFactory
 	@Override
 	public IView createView(final CreateViewRequest request)
 	{
-		if (!request.getFilterOnlyIds().isEmpty())
-		{
-			throw new IllegalArgumentException("Filtering by Ids are not supported: " + request);
-		}
-
 		final SqlViewBindingKey sqlViewBindingKey = new SqlViewBindingKey(request.getWindowId(), request.getViewTypeRequiredFieldCharacteristic());
 		final SqlViewBinding sqlViewBinding = getViewBinding(sqlViewBindingKey);
 		final SqlViewDataRepository sqlViewDataRepository = new SqlViewDataRepository(sqlViewBinding);
 
-		return DefaultView.builder(sqlViewDataRepository)
+		final DefaultView.Builder viewBuilder = DefaultView.builder(sqlViewDataRepository)
 				.setWindowId(request.getWindowId())
 				.setViewType(request.getViewType())
 				.setReferencingDocumentPaths(request.getReferencingDocumentPaths())
 				.setParentViewId(request.getParentViewId())
+				.setParentRowId(request.getParentRowId())
 				.addStickyFilters(request.getStickyFilters())
-				.addStickyFilter(extractReferencedDocumentFilter(request.getWindowId(), request.getSingleReferencingDocumentPathOrNull()))
-				.setFiltersFromJSON(request.getFilters())
-				.build();
+				.addStickyFilter(extractReferencedDocumentFilter(request.getWindowId(), request.getSingleReferencingDocumentPathOrNull()));
+		
+		final DocumentFiltersList filters = request.getFilters();
+		if(filters.isJson())
+		{
+			viewBuilder.setFiltersFromJSON(filters.getJsonFilters());
+		}
+		else
+		{
+			viewBuilder.setFilters(filters.getFilters());
+		}
+
+		if (!request.getFilterOnlyIds().isEmpty())
+		{
+			viewBuilder.addStickyFilter(DocumentFilter.inArrayFilter(sqlViewBinding.getKeyColumnName(), sqlViewBinding.getKeyColumnName(), request.getFilterOnlyIds()));
+		}
+
+		return viewBuilder.build();
 	}
 
 	private final DocumentFilter extractReferencedDocumentFilter(final WindowId targetWindowId, final DocumentPath referencedDocumentPath)
@@ -150,7 +163,7 @@ public class SqlViewFactory implements IViewFactory
 		final DocumentFilterDescriptorsProvider filterDescriptors = entityDescriptor.getFilterDescriptors();
 
 		final SqlViewGroupingBinding groupingBinding;
-		if (entityDescriptor.getWindowId().toIntOr(-1) == 540345) // FIXME: HARDCODED
+		if (PickingConstants.WINDOWID_PackageableView.equals(entityDescriptor.getWindowId())) // FIXME: HARDCODED
 		{
 			groupingBinding = SqlViewGroupingBinding.builder()
 					.groupBy(I_M_Packageable_V.COLUMNNAME_M_Warehouse_ID)

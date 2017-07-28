@@ -78,8 +78,12 @@ public interface IViewsRepository
 	IView createView(CreateViewRequest request);
 
 	IView filterView(ViewId viewId, JSONFilterViewRequest jsonRequest);
+	
+	IView deleteStickyFilter(ViewId viewId, String filterId);
 
 	void deleteView(ViewId viewId);
+
+	void invalidateView(ViewId viewId);
 
 	List<IView> getViews();
 
@@ -92,5 +96,4 @@ public interface IViewsRepository
 	{
 		notifyRecordsChanged(ImmutableSet.of(TableRecordReference.of(tableName, recordId)));
 	}
-
 }

@@ -9,7 +9,6 @@ import org.adempiere.ad.dao.IQueryFilter;
 import org.adempiere.ad.dao.ISqlQueryFilter;
 import org.adempiere.model.PlainContextAware;
 import org.adempiere.util.Services;
-import org.adempiere.util.api.IMsgBL;
 import org.compiere.util.CCache;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
@@ -20,13 +19,14 @@ import com.google.common.collect.ImmutableList;
 
 import de.metas.handlingunits.IHandlingUnitsDAO;
 import de.metas.handlingunits.model.I_M_HU;
+import de.metas.i18n.IMsgBL;
 import de.metas.i18n.ITranslatableString;
 import de.metas.ui.web.document.filter.DocumentFilter;
 import de.metas.ui.web.document.filter.DocumentFilterDescriptor;
 import de.metas.ui.web.document.filter.DocumentFilterParamDescriptor;
 import de.metas.ui.web.document.filter.ImmutableDocumentFilterDescriptorsProvider;
-import de.metas.ui.web.document.filter.json.JSONDocumentFilter;
 import de.metas.ui.web.document.filter.sql.SqlDocumentFilterConverter;
+import de.metas.ui.web.document.filter.sql.SqlParamsCollector;
 import de.metas.ui.web.view.CreateViewRequest;
 import de.metas.ui.web.view.IViewFactory;
 import de.metas.ui.web.view.SqlViewFactory;
@@ -39,8 +39,6 @@ import de.metas.ui.web.window.datatypes.PanelLayoutType;
 import de.metas.ui.web.window.datatypes.WindowId;
 import de.metas.ui.web.window.descriptor.DocumentEntityDescriptor;
 import de.metas.ui.web.window.descriptor.DocumentFieldWidgetType;
-import de.metas.ui.web.window.descriptor.DocumentLayoutElementDescriptor;
-import de.metas.ui.web.window.descriptor.DocumentLayoutElementFieldDescriptor;
 import de.metas.ui.web.window.descriptor.factory.DocumentDescriptorFactory;
 import de.metas.ui.web.window.descriptor.factory.standard.LayoutFactory;
 import de.metas.ui.web.window.descriptor.sql.SqlDocumentEntityDataBindingDescriptor;
@@ -158,32 +156,13 @@ public class HUEditorViewFactory implements IViewFactory
 				.setCaption("HU Editor")
 				.setEmptyResultText(LayoutFactory.HARDCODED_TAB_EMPTY_RESULT_TEXT)
 				.setEmptyResultHint(LayoutFactory.HARDCODED_TAB_EMPTY_RESULT_HINT)
-				.setIdFieldName(IHUEditorRow.COLUMNNAME_M_HU_ID)
+				.setIdFieldName(HUEditorRow.COLUMNNAME_M_HU_ID)
 				.setFilters(getSqlViewBinding().getViewFilterDescriptors().getAll())
 				//
 				.setHasAttributesSupport(true)
 				.setHasTreeSupport(true)
 				//
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaption("Code")
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_Value)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("M_Product_ID")
-						.setWidgetType(DocumentFieldWidgetType.Lookup)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_M_Product_ID)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("M_HU_PI_Item_Product_ID")
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_PackingInfo)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("QtyCU")
-						.setWidgetType(DocumentFieldWidgetType.Quantity)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_QtyCU)))
+				.addElementsFromViewRowClass(HUEditorRow.class, JSONViewDataType.includedView)
 				//
 				.build();
 	}
@@ -195,48 +174,13 @@ public class HUEditorViewFactory implements IViewFactory
 				.setCaption("HU Editor")
 				.setEmptyResultText(LayoutFactory.HARDCODED_TAB_EMPTY_RESULT_TEXT)
 				.setEmptyResultHint(LayoutFactory.HARDCODED_TAB_EMPTY_RESULT_HINT)
-				.setIdFieldName(IHUEditorRow.COLUMNNAME_M_HU_ID)
+				.setIdFieldName(HUEditorRow.COLUMNNAME_M_HU_ID)
 				.setFilters(getSqlViewBinding().getViewFilterDescriptors().getAll())
 				//
 				.setHasAttributesSupport(true)
 				.setHasTreeSupport(true)
 				//
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaption("Code")
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_Value)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("M_Product_ID")
-						.setWidgetType(DocumentFieldWidgetType.Lookup)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_M_Product_ID)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("HU_UnitType")
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_HU_UnitType)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("M_HU_PI_Item_Product_ID")
-						.setWidgetType(DocumentFieldWidgetType.Text)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_PackingInfo)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("QtyCU")
-						.setWidgetType(DocumentFieldWidgetType.Quantity)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_QtyCU)))
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message("C_UOM_ID")
-						.setWidgetType(DocumentFieldWidgetType.Lookup)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_C_UOM_ID)))
-				//
-				.addElement(DocumentLayoutElementDescriptor.builder()
-						.setCaptionFromAD_Message(IHUEditorRow.COLUMNNAME_HUStatus)
-						.setWidgetType(DocumentFieldWidgetType.Lookup)
-						.setGridElement()
-						.addField(DocumentLayoutElementFieldDescriptor.builder(IHUEditorRow.COLUMNNAME_HUStatus)))
+				.addElementsFromViewRowClass(HUEditorRow.class, JSONViewDataType.grid)
 				//
 				.build();
 	}
@@ -266,16 +210,18 @@ public class HUEditorViewFactory implements IViewFactory
 		}
 
 		final List<DocumentFilter> stickyFilters = extractStickyFilters(request.getStickyFilters(), request.getFilterOnlyIds());
-		final List<DocumentFilter> filters = JSONDocumentFilter.unwrapList(request.getFilters(), getSqlViewBinding().getViewFilterDescriptors());
+		final List<DocumentFilter> filters = request.getOrUnwrapFilters(getSqlViewBinding().getViewFilterDescriptors());
 
 		return HUEditorView.builder(getSqlViewBinding())
 				.setParentViewId(request.getParentViewId())
+				.setParentRowId(request.getParentRowId())
 				.setWindowId(windowId)
 				.setViewType(request.getViewType())
 				.setStickyFilters(stickyFilters)
 				.setFilters(filters)
 				.setReferencingDocumentPaths(referencingTableName, referencingDocumentPaths)
 				.setActions(request.getActions())
+				.setAdditionalRelatedProcessDescriptors(request.getAdditionalRelatedProcessDescriptors())
 				.build();
 	}
 
@@ -324,7 +270,7 @@ public class HUEditorViewFactory implements IViewFactory
 		}
 
 		@Override
-		public String getSql(final List<Object> sqlParamsOut, final DocumentFilter filter)
+		public String getSql(final SqlParamsCollector sqlParamsOut, final DocumentFilter filter)
 		{
 			final Object barcodeObj = filter.getParameter(PARAM_Barcode).getValue();
 			if (barcodeObj == null)
@@ -347,7 +293,7 @@ public class HUEditorViewFactory implements IViewFactory
 			final String sql = sqlQueryFilter.getSql();
 			final List<Object> sqlParams = sqlQueryFilter.getSqlParams(Env.getCtx());
 
-			sqlParamsOut.addAll(sqlParams);
+			sqlParamsOut.collectAll(sqlParams);
 			return sql;
 		}
 	}

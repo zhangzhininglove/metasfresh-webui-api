@@ -1,12 +1,17 @@
 package de.metas.ui.web.window.datatypes.json;
 
+import java.util.List;
+
+import org.adempiere.exceptions.AdempiereException;
 import org.compiere.util.DisplayType;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.collect.ImmutableList;
 
+import de.metas.ui.web.window.datatypes.DocumentIdsSelection;
 import io.swagger.annotations.ApiModel;
 import lombok.Value;
 
@@ -60,24 +65,47 @@ public class JSONDocumentChangedEvent
 	private final String path;
 	@JsonProperty("value")
 	private final Object value;
-	
+
 	public boolean isReplace()
 	{
 		return operation == JSONOperation.replace;
 	}
-	
+
 	public Boolean getValueAsBoolean(final Boolean defaultValue)
 	{
 		return DisplayType.toBoolean(value, defaultValue);
 	}
-	
+
 	public int getValueAsInteger(final int defaultValueIfNull)
 	{
-		if(value == null)
+		if (value == null)
 		{
 			return defaultValueIfNull;
 		}
 		return Integer.parseInt(value.toString());
+	}
+
+	public List<Integer> getValueAsIntegersList()
+	{
+		if (value == null)
+		{
+			return ImmutableList.of();
+		}
+
+		if (value instanceof List<?>)
+		{
+			@SuppressWarnings("unchecked")
+			final List<Integer> intList = (List<Integer>)value;
+			return intList;
+		}
+		else if (value instanceof String)
+		{
+			return ImmutableList.copyOf(DocumentIdsSelection.ofCommaSeparatedString(value.toString()).toIntSet());
+		}
+		else
+		{
+			throw new AdempiereException("Cannot convert value to int list").setParameter("event", this);
+		}
 	}
 
 }

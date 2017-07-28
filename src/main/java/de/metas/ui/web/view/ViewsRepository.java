@@ -4,12 +4,14 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import javax.annotation.PostConstruct;
 
 import org.adempiere.ad.trx.api.ITrx;
 import org.adempiere.exceptions.AdempiereException;
+import org.adempiere.util.Check;
+import org.adempiere.util.lang.MutableInt;
 import org.adempiere.util.lang.impl.TableRecordReference;
 import org.compiere.Adempiere;
 import org.compiere.util.DB;
@@ -17,16 +19,12 @@ import org.compiere.util.Util.ArrayKey;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Repository;
 
-import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Streams;
 
 import de.metas.logging.LogManager;
 import de.metas.ui.web.base.model.I_T_WEBUI_ViewSelection;
@@ -40,6 +38,7 @@ import de.metas.ui.web.view.json.JSONFilterViewRequest;
 import de.metas.ui.web.view.json.JSONViewDataType;
 import de.metas.ui.web.window.controller.DocumentPermissionsHelper;
 import de.metas.ui.web.window.datatypes.WindowId;
+import lombok.NonNull;
 
 /*
  * #%L
@@ -78,34 +77,16 @@ public class ViewsRepository implements IViewsRepository
 	@Value("${metasfresh.webui.view.truncateOnStartUp:true}")
 	private boolean truncateSelectionOnStartUp;
 
-	private final Cache<String, IView> views = CacheBuilder.newBuilder()
-			.expireAfterAccess(1, TimeUnit.HOURS)
-			.removalListener(notification -> onViewRemoved(notification))
-			.build();
+	private final ConcurrentHashMap<WindowId, IViewsIndexStorage> viewsIndexStorages = new ConcurrentHashMap<>();
+	private final IViewsIndexStorage defaultViewsIndexStorage = new DefaultViewsRepositoryStorage();
 
-	@Autowired
-	public ViewsRepository(final ApplicationContext context, final Adempiere adempiere_NOTUSED)
+	/**
+	 * 
+	 * @param neededForDBAccess not used in here, but we need to cause spring to initialize it <b>before</b> this component can be initialized.
+	 *            So, if you clean this up, please make sure that the webui-API still starts up ^^.
+	 */
+	public ViewsRepository(@NonNull final Adempiere neededForDBAccess)
 	{
-		//
-		// Discover context factories
-		for (final Object factoryObj : context.getBeansWithAnnotation(ViewFactory.class).values())
-		{
-			final IViewFactory factory = (IViewFactory)factoryObj;
-			final ViewFactory annotation = factoryObj.getClass().getAnnotation(ViewFactory.class);
-			final WindowId windowId = WindowId.fromJson(annotation.windowId());
-
-			JSONViewDataType[] viewTypes = annotation.viewTypes();
-			if (viewTypes.length == 0)
-			{
-				viewTypes = JSONViewDataType.values();
-			}
-
-			for (final JSONViewDataType viewType : viewTypes)
-			{
-				factories.put(mkFactoryKey(windowId, viewType), factory);
-				logger.info("Registered {} for windowId={}, viewType={}", factory, windowId, viewTypes);
-			}
-		}
 	}
 
 	@PostConstruct
@@ -126,10 +107,38 @@ public class ViewsRepository implements IViewsRepository
 			final int no = DB.executeUpdateEx("DELETE FROM " + tableName, ITrx.TRXNAME_NoneNotNull);
 			logger.info("Deleted {} records(all) from table {} (Took: {})", no, tableName, stopwatch);
 		}
-		catch (Exception ex)
+		catch (final Exception ex)
 		{
 			logger.warn("Failed deleting all from {} (Took: {})", tableName, stopwatch, ex);
 		}
+	}
+
+	@Autowired
+	private void registerAnnotatedFactories(final Collection<IViewFactory> viewFactories)
+	{
+		for (final IViewFactory factory : viewFactories)
+		{
+			final ViewFactory annotation = factory.getClass().getAnnotation(ViewFactory.class);
+			if (annotation == null)
+			{
+				logger.info("Skip registering {} because it's not annotated with {}", factory, ViewFactory.class);
+				continue;
+			}
+
+			final WindowId windowId = WindowId.fromJson(annotation.windowId());
+			JSONViewDataType[] viewTypes = annotation.viewTypes();
+			if (viewTypes.length == 0)
+			{
+				viewTypes = JSONViewDataType.values();
+			}
+
+			for (final JSONViewDataType viewType : viewTypes)
+			{
+				factories.put(mkFactoryKey(windowId, viewType), factory);
+				logger.info("Registered {} for windowId={}, viewType={}", factory, windowId, viewTypes);
+			}
+		}
+
 	}
 
 	private final IViewFactory getFactory(final WindowId windowId, final JSONViewDataType viewType)
@@ -154,6 +163,50 @@ public class ViewsRepository implements IViewsRepository
 		return ArrayKey.of(windowId, viewType);
 	}
 
+	@Autowired
+	private void registerViewsIndexStorages(final Collection<IViewsIndexStorage> viewsIndexStorages)
+	{
+		if (viewsIndexStorages.isEmpty())
+		{
+			logger.info("No {} discovered", IViewsIndexStorage.class);
+			return;
+		}
+
+		for (final IViewsIndexStorage viewsIndexStorage : viewsIndexStorages)
+		{
+			if (viewsIndexStorage instanceof DefaultViewsRepositoryStorage)
+			{
+				logger.warn("Skipping {} because it shall not be in spring context", viewsIndexStorage);
+				continue;
+			}
+
+			final WindowId windowId = viewsIndexStorage.getWindowId();
+			Check.assumeNotNull(windowId, "Parameter windowId is not null");
+
+			viewsIndexStorage.setViewsRepository(this);
+
+			this.viewsIndexStorages.put(windowId, viewsIndexStorage);
+			logger.info("Registered {} for windowId={}", viewsIndexStorage, windowId);
+		}
+	}
+
+	private IViewsIndexStorage getViewsStorageFor(@NonNull final ViewId viewId)
+	{
+		final IViewsIndexStorage viewIndexStorage = viewsIndexStorages.get(viewId.getWindowId());
+		if (viewIndexStorage != null)
+		{
+			return viewIndexStorage;
+		}
+
+		return defaultViewsIndexStorage;
+	}
+
+	private Stream<IView> streamAllViews()
+	{
+		return Streams.concat(viewsIndexStorages.values().stream(), Stream.of(defaultViewsIndexStorage))
+				.flatMap(IViewsIndexStorage::streamAllViews);
+	}
+
 	@Override
 	public ViewLayout getViewLayout(final WindowId windowId, final JSONViewDataType viewDataType)
 	{
@@ -170,7 +223,7 @@ public class ViewsRepository implements IViewsRepository
 	@Override
 	public List<IView> getViews()
 	{
-		return ImmutableList.copyOf(views.asMap().values());
+		return streamAllViews().collect(ImmutableList.toImmutableList());
 	}
 
 	@Override
@@ -187,7 +240,7 @@ public class ViewsRepository implements IViewsRepository
 					.setParameter("factory", factory.toString());
 		}
 
-		views.put(view.getViewId().getViewId(), view);
+		getViewsStorageFor(view.getViewId()).put(view);
 
 		return view;
 	}
@@ -215,8 +268,7 @@ public class ViewsRepository implements IViewsRepository
 		// NOTE: avoid adding if the factory returned the same view.
 		if (view != newView)
 		{
-			final ViewId newViewId = newView.getViewId();
-			views.put(newViewId.getViewId(), newView);
+			getViewsStorageFor(newView.getViewId()).put(newView);
 		}
 
 		// Return the newly created view
@@ -224,24 +276,58 @@ public class ViewsRepository implements IViewsRepository
 	}
 
 	@Override
-	public IView getViewIfExists(final ViewId viewId)
+	public IView deleteStickyFilter(final ViewId viewId, final String filterId)
 	{
-		Preconditions.checkNotNull(viewId, "viewId cannot be null");
-		return views.getIfPresent(viewId.getViewId());
+		// Get current view
+		final IView view = getView(viewId);
+
+		//
+		// Create the new view
+		final IViewFactory factory = getFactory(view.getViewId().getWindowId(), view.getViewType());
+		final IView newView = factory.deleteStickyFilter(view, filterId);
+		if (newView == null)
+		{
+			throw new AdempiereException("Failed deleting sticky/static filter")
+					.setParameter("viewId", viewId)
+					.setParameter("filterId", filterId)
+					.setParameter("factory", factory.toString());
+		}
+
+		//
+		// Add the new view to our internal map
+		// NOTE: avoid adding if the factory returned the same view.
+		if (view != newView)
+		{
+			getViewsStorageFor(newView.getViewId()).put(newView);
+		}
+
+		// Return the newly created view
+		return newView;
 	}
 
 	@Override
-	public IView getView(final String viewId)
+	public IView getView(@NonNull final String viewIdStr)
 	{
-		Preconditions.checkNotNull(viewId, "viewId cannot be null");
+		final ViewId viewId = ViewId.ofViewIdString(viewIdStr);
+		final IView view = getViewIfExists(viewId);
+		if (view == null)
+		{
+			throw new EntityNotFoundException("No view found for viewId=" + viewId);
+		}
+		return view;
+	}
 
-		final IView view = views.getIfPresent(viewId);
+	@Override
+	public IView getViewIfExists(final ViewId viewId)
+	{
+		final IView view = getViewsStorageFor(viewId).getByIdOrNull(viewId);
 		if (view == null)
 		{
 			throw new EntityNotFoundException("No view found for viewId=" + viewId);
 		}
 
-		DocumentPermissionsHelper.assertWindowAccess(view.getViewId().getWindowId(), viewId, UserSession.getCurrentPermissions());
+		final String windowName = viewId.getViewId(); // used only for error reporting
+		DocumentPermissionsHelper.assertWindowAccess(viewId.getWindowId(), windowName, UserSession.getCurrentPermissions());
 
 		return view;
 	}
@@ -249,14 +335,13 @@ public class ViewsRepository implements IViewsRepository
 	@Override
 	public void deleteView(final ViewId viewId)
 	{
-		Preconditions.checkNotNull(viewId, "viewId cannot be null");
-		views.invalidate(viewId.getViewId());
+		getViewsStorageFor(viewId).removeById(viewId);
 	}
 
-	private final void onViewRemoved(final RemovalNotification<Object, Object> notification)
+	@Override
+	public void invalidateView(final ViewId viewId)
 	{
-		final IView view = (IView)notification.getValue();
-		view.close();
+		getViewsStorageFor(viewId).invalidateView(viewId);
 	}
 
 	@Override
@@ -268,13 +353,17 @@ public class ViewsRepository implements IViewsRepository
 			return;
 		}
 
-		final Collection<IView> views = this.views.asMap().values();
+		final MutableInt notifiedCount = MutableInt.zero();
+		streamAllViews()
+				.forEach(view -> {
+					view.notifyRecordsChanged(recordRefs);
+					notifiedCount.incrementAndGet();
+				});
 
 		if (logger.isDebugEnabled())
 		{
-			logger.debug("Notifing {} views about changed records: {}", views.size(), recordRefs);
+			logger.debug("Notified {} views about changed records: {}", notifiedCount, recordRefs);
 		}
 
-		views.forEach(view -> view.notifyRecordsChanged(recordRefs));
 	}
 }

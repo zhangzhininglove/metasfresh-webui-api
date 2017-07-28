@@ -14,6 +14,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 import de.metas.printing.esb.base.util.Check;
+import lombok.NonNull;
 
 /*
  * #%L
@@ -44,7 +45,7 @@ public abstract class DocumentId implements Serializable
 {
 	private static final transient int NEW_ID = -1;
 	public static final transient String NEW_ID_STRING = "NEW";
-	private static final transient DocumentId NEW = new IntDocumentId(NEW_ID);
+	public static final transient DocumentId NEW = new IntDocumentId(NEW_ID);
 
 	@JsonCreator
 	public static final DocumentId of(final String idStr)
@@ -140,6 +141,27 @@ public abstract class DocumentId implements Serializable
 	public abstract boolean isInt();
 
 	public abstract int toInt();
+
+	public int removePrefixAndConvertToInt(@NonNull final String idPrefix)
+	{
+		if (isInt())
+		{
+			return toInt();
+		}
+
+		if (idPrefix.isEmpty())
+		{
+			return toInt();
+		}
+
+		String idStr = toJson();
+		if (idStr.startsWith(idPrefix))
+		{
+			idStr = idStr.substring(idPrefix.length());
+		}
+
+		return Integer.parseInt(idStr);
+	}
 
 	public abstract boolean isNew();
 

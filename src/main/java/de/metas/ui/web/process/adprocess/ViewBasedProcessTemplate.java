@@ -20,8 +20,10 @@ import de.metas.ui.web.process.ViewAsPreconditionsContext;
 import de.metas.ui.web.view.IView;
 import de.metas.ui.web.view.IViewRow;
 import de.metas.ui.web.view.IViewsRepository;
+import de.metas.ui.web.view.ViewId;
 import de.metas.ui.web.window.datatypes.DocumentId;
 import de.metas.ui.web.window.datatypes.DocumentIdsSelection;
+import lombok.NonNull;
 
 /*
  * #%L
@@ -47,7 +49,7 @@ import de.metas.ui.web.window.datatypes.DocumentIdsSelection;
 
 /**
  * An {@link JavaProcess} implementation template to be used by processes which are called from views.
- * 
+ *
  * @author metas-dev <dev@metasfresh.com>
  *
  */
@@ -82,7 +84,7 @@ public abstract class ViewBasedProcessTemplate extends JavaProcess
 	/**
 	 * Please implement {@link #checkPreconditionsApplicable()} instead of this.
 	 *
-	 * WARNING: The preconditions will be checked only if the extending class will implement IProcessPrecondition class.
+	 * WARNING: The preconditions will be checked only if the extending class implements IProcessPrecondition class.
 	 *
 	 * @param context
 	 */
@@ -97,7 +99,7 @@ public abstract class ViewBasedProcessTemplate extends JavaProcess
 	}
 
 	@Override
-	protected final void init(IProcessPreconditionsContext context)
+	protected final void init(final IProcessPreconditionsContext context)
 	{
 		super.init(context);
 
@@ -107,7 +109,7 @@ public abstract class ViewBasedProcessTemplate extends JavaProcess
 	}
 
 	@Override
-	protected void loadParametersFromContext(boolean failIfNotValid)
+	protected void loadParametersFromContext(final boolean failIfNotValid)
 	{
 		super.loadParametersFromContext(failIfNotValid);
 
@@ -137,6 +139,27 @@ public abstract class ViewBasedProcessTemplate extends JavaProcess
 		Check.assumeNotNull(_view, "View loaded");
 		return _view;
 	}
+	
+	protected final void invalidateView(@NonNull final ViewId viewId)
+	{
+		viewsRepo.invalidateView(viewId);
+	}
+
+	protected final void invalidateView()
+	{
+		final IView view = getView();
+		invalidateView(view.getViewId());
+	}
+
+	protected final void invalidateParentView()
+	{
+		final IView view = getView();
+		final ViewId parentViewId = view.getParentViewId();
+		if (parentViewId != null)
+		{
+			invalidateView(parentViewId);
+		}
+	}
 
 	protected final DocumentIdsSelection getSelectedDocumentIds()
 	{
@@ -151,7 +174,7 @@ public abstract class ViewBasedProcessTemplate extends JavaProcess
 		final DocumentId documentId = selectedDocumentIds.getSingleDocumentId();
 		return getView().getById(documentId);
 	}
-	
+
 	protected static <T extends IViewRow> ProcessPreconditionsResolution checkRowsEligible(final Stream<T> rows, final Predicate<T> isEligible)
 	{
 		final MutableInt countNotEligible = MutableInt.zero();

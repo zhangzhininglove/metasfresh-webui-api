@@ -1,4 +1,6 @@
-package de.metas.ui.web.pporder;
+package de.metas.ui.web.login.exceptions;
+
+import org.adempiere.exceptions.AdempiereException;
 
 /*
  * #%L
@@ -22,13 +24,12 @@ package de.metas.ui.web.pporder;
  * #L%
  */
 
-public interface IPPOrderBOMLine
+public class NotLoggedInAsSysAdminException extends AdempiereException
 {
-	String COLUMNNAME_Value = "Value";
-	String COLUMNNAME_Type = "Type";
-	String COLUMNNAME_M_Product_ID = "M_Product_ID";
-	String COLUMNNAME_PackingInfo = "PackingInfo";
-	String COLUMNNAME_C_UOM_ID = "C_UOM_ID";
-	String COLUMNNAME_Qty = "Qty";
-	String COLUMNNAME_QtyPlan = "QtyPlan";
+	private static final long serialVersionUID = -2528134231184643520L;
+
+	public NotLoggedInAsSysAdminException()
+	{
+		super("not logged in as System Administrator");
+	}
 }
