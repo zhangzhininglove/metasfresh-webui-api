@@ -18,10 +18,10 @@ import com.google.common.collect.ListMultimap;
 import de.metas.handlingunits.model.I_M_Picking_Candidate;
 import de.metas.handlingunits.model.X_M_Picking_Candidate;
 import de.metas.ui.web.handlingunits.HUEditorRow;
+import de.metas.ui.web.handlingunits.HUEditorRowId;
 import de.metas.ui.web.handlingunits.HUEditorRowType;
 import de.metas.ui.web.handlingunits.HUEditorViewRepository;
 import de.metas.ui.web.picking.PickingHUsRepository.PickingSlotHUEditorRow;
-import de.metas.ui.web.window.datatypes.DocumentId;
 import de.metas.ui.web.window.datatypes.WindowId;
 import lombok.NonNull;
 import mockit.Expectations;
@@ -68,7 +68,8 @@ public class PickingHUsRepositoryTests
 			{
 					X_M_Picking_Candidate.STATUS_IP,
 					X_M_Picking_Candidate.STATUS_PR,
-					X_M_Picking_Candidate.STATUS_CL };
+					X_M_Picking_Candidate.STATUS_CL
+			};
 	}
 
 	@Before
@@ -87,29 +88,40 @@ public class PickingHUsRepositoryTests
 	{
 		final I_M_Picking_Candidate pickingCandidate = newInstance(I_M_Picking_Candidate.class);
 		pickingCandidate.setM_ShipmentSchedule_ID(M_SHIPMENT_SCHEDULE_ID);
-		pickingCandidate.setM_HU_ID(223);
+		pickingCandidate.setM_HU_ID(M_HU_ID);
 		pickingCandidate.setM_PickingSlot_ID(M_PICKINGSLOT_ID);
 		pickingCandidate.setStatus(pickingCandidateStatus);
 		save(pickingCandidate);
 
 		final HUEditorRow huEditorRow = HUEditorRow
 				.builder(WindowId.of(423))
-				.setHUId(M_HU_ID)
-				.setRowId(DocumentId.of(523))
+				.setRowId(HUEditorRowId.ofTopLevelHU(M_HU_ID))
 				.setType(HUEditorRowType.LU)
 				.setTopLevel(true)
 				.build();
 
-		// @formatter:off
-		new Expectations() {{ huEditorViewRepository.retrieveHUEditorRows(ImmutableSet.of(M_HU_ID)); result = huEditorRow; }};
-		// @formatter:on
+		if(!X_M_Picking_Candidate.STATUS_CL.equals(pickingCandidateStatus))
+		{
+			// @formatter:off
+			new Expectations() {{ huEditorViewRepository.retrieveHUEditorRows(ImmutableSet.of(M_HU_ID)); result = huEditorRow; }};
+			// @formatter:on
+		}
 
 		final PickingHUsRepository pickingHUsRepository = new PickingHUsRepository(huEditorViewRepository);
 		final ListMultimap<Integer, PickingSlotHUEditorRow> result = pickingHUsRepository.retrieveHUsIndexedByPickingSlotId(PickingSlotRepoQuery.of(M_SHIPMENT_SCHEDULE_ID));
-		assertThat(result.size(), is(1));
-		assertThat(result.get(M_PICKINGSLOT_ID).size(), is(1));
 
-		final boolean expectedProcessed = !X_M_Picking_Candidate.STATUS_IP.equals(pickingCandidateStatus);
-		assertThat(result.get(M_PICKINGSLOT_ID).get(0), is(new PickingSlotHUEditorRow(huEditorRow, expectedProcessed)));
+		if (X_M_Picking_Candidate.STATUS_CL.equals(pickingCandidateStatus))
+		{
+			// if 'pickingCandidate' is "closed", then nothing shall be returned
+			assertThat(result.size(), is(0));
+		}
+		else
+		{
+			assertThat(result.size(), is(1));
+			assertThat(result.get(M_PICKINGSLOT_ID).size(), is(1));
+
+			final boolean expectedProcessed = !X_M_Picking_Candidate.STATUS_IP.equals(pickingCandidateStatus);
+			assertThat(result.get(M_PICKINGSLOT_ID).get(0), is(new PickingSlotHUEditorRow(huEditorRow, expectedProcessed)));
+		}
 	}
 }

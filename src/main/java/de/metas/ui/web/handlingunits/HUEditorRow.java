@@ -2,10 +2,10 @@ package de.metas.ui.web.handlingunits;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -14,6 +14,7 @@ import javax.annotation.Nullable;
 import org.adempiere.ad.trx.api.ITrx;
 import org.adempiere.model.InterfaceWrapperHelper;
 import org.adempiere.util.Check;
+import org.adempiere.util.StringUtils;
 import org.compiere.model.I_C_UOM;
 import org.compiere.util.Env;
 
@@ -31,7 +32,6 @@ import de.metas.ui.web.view.descriptor.annotation.ViewColumn.ViewColumnLayout;
 import de.metas.ui.web.view.descriptor.annotation.ViewColumnHelper;
 import de.metas.ui.web.view.json.JSONViewDataType;
 import de.metas.ui.web.window.datatypes.DocumentId;
-import de.metas.ui.web.window.datatypes.DocumentIdsSelection;
 import de.metas.ui.web.window.datatypes.DocumentPath;
 import de.metas.ui.web.window.datatypes.LookupValue;
 import de.metas.ui.web.window.datatypes.LookupValue.IntegerLookupValue;
@@ -80,30 +80,10 @@ public final class HUEditorRow implements IViewRow
 		return (HUEditorRow)viewRow;
 	}
 
-	public static DocumentId rowIdFromM_HU_ID(final int huId)
-	{
-		return DocumentId.of(huId);
-	}
-
-	public static DocumentIdsSelection rowIdsFromM_HU_IDs(final Collection<Integer> huIds)
-	{
-		return DocumentIdsSelection.ofIntSet(huIds);
-	}
-
-	public static DocumentId rowIdFromM_HU_Storage(final int huId, final int productId)
-	{
-		return DocumentId.ofString("HU" + huId + "_P" + productId);
-	}
-
-	public static Set<Integer> rowIdsToM_HU_IDs(final Collection<DocumentId> rowIds)
-	{
-		return DocumentIdsSelection.of(rowIds).toIntSet();
-	}
-
 	static final int HUSTATUS_AD_Reference_ID = X_M_HU.HUSTATUS_AD_Reference_ID;
 
 	private final DocumentPath documentPath;
-	private final DocumentId rowId;
+	private final HUEditorRowId rowId;
 	private final HUEditorRowType type;
 	private final boolean topLevel;
 	private final boolean processed;
@@ -164,13 +144,13 @@ public final class HUEditorRow implements IViewRow
 	private HUEditorRow(final Builder builder)
 	{
 		documentPath = builder.getDocumentPath();
-		rowId = documentPath.getDocumentId();
+		rowId = builder.getRowId();
 
 		type = builder.getType();
 		topLevel = builder.isTopLevel();
 		processed = builder.isProcessed();
 
-		huId = builder.huId;
+		huId = rowId.getHuId();
 		code = builder.code;
 		huUnitType = builder.huUnitType;
 		huStatus = builder.huStatus;
@@ -185,7 +165,7 @@ public final class HUEditorRow implements IViewRow
 		if (attributesProvider != null)
 		{
 			final DocumentId attributesKey = attributesProvider.createAttributeKey(huId);
-			attributesSupplier = () -> attributesProvider.getAttributes(rowId, attributesKey);
+			attributesSupplier = () -> attributesProvider.getAttributes(rowId.toDocumentId(), attributesKey);
 		}
 		else
 		{
@@ -208,12 +188,17 @@ public final class HUEditorRow implements IViewRow
 		return documentPath;
 	}
 
-	@Override
-	public DocumentId getId()
+	public HUEditorRowId getHURowId()
 	{
 		return rowId;
 	}
 
+	@Override
+	public DocumentId getId()
+	{
+		return getHURowId().toDocumentId();
+	}
+	
 	/**
 	 * @return {@link HUEditorRowType}; never returns null.
 	 */
@@ -298,6 +283,13 @@ public final class HUEditorRow implements IViewRow
 				.map(includedRow -> streamRecursive(includedRow))
 				.reduce(Stream.of(row), Stream::concat);
 	}
+	
+	public Optional<HUEditorRow> getIncludedRowById(final DocumentId rowId)
+	{
+		return streamRecursive()
+				.filter(row -> rowId.equals(row.getId()))
+				.findFirst();
+	}
 
 	/**
 	 *
@@ -320,6 +312,17 @@ public final class HUEditorRow implements IViewRow
 			return null;
 		}
 		return InterfaceWrapperHelper.create(Env.getCtx(), huId, I_M_HU.class, ITrx.TRXNAME_ThreadInherited);
+	}
+
+	public boolean isHUPlanningReceiptOwnerPM()
+	{
+		// TODO: cache it or better it shall be provided when the row is created
+		final I_M_HU hu = getM_HU();
+		if (hu == null)
+		{
+			return false;
+		}
+		return hu.isHUPlanningReceiptOwnerPM();
 	}
 
 	public String getValue()
@@ -483,6 +486,27 @@ public final class HUEditorRow implements IViewRow
 		return IntegerLookupValue.of(getM_HU_ID(), getSummary());
 	}
 
+	/**
+	 * @param stringFilter
+	 * @param adLanguage AD_Language (used to get the right row's string representation)
+	 * @return true if the row is matching the string filter
+	 */
+	public boolean matchesStringFilter(final String stringFilter)
+	{
+		if (Check.isEmpty(stringFilter, true))
+		{
+			return true;
+		}
+
+		final String rowDisplayName = getSummary();
+
+		final Function<String, String> normalizer = s -> StringUtils.stripDiacritics(s.trim()).toLowerCase();
+		final String rowDisplayNameNorm = normalizer.apply(rowDisplayName);
+		final String stringFilterNorm = normalizer.apply(stringFilter);
+
+		return rowDisplayNameNorm.contains(stringFilterNorm);
+	}
+
 	//
 	//
 	//
@@ -491,12 +515,11 @@ public final class HUEditorRow implements IViewRow
 	public static final class Builder
 	{
 		private final WindowId windowId;
-		private DocumentId _rowId;
+		private HUEditorRowId _rowId;
 		private Boolean topLevel;
 		private HUEditorRowType type;
 		private Boolean processed;
 
-		private Integer huId;
 		private String code;
 		private JSONLookupValue huUnitType;
 		private JSONLookupValue huStatus;
@@ -521,23 +544,23 @@ public final class HUEditorRow implements IViewRow
 
 		private DocumentPath getDocumentPath()
 		{
-			final DocumentId rowId = getRowId();
-			return DocumentPath.rootDocumentPath(windowId, rowId);
+			final HUEditorRowId rowId = getRowId();
+			return DocumentPath.rootDocumentPath(windowId, rowId.toDocumentId());
 		}
 
-		public Builder setRowId(final DocumentId rowId)
+		public Builder setRowId(final HUEditorRowId rowId)
 		{
 			_rowId = rowId;
 			return this;
 		}
 
 		/** @return row ID */
-		private DocumentId getRowId()
+		private HUEditorRowId getRowId()
 		{
 			Check.assumeNotNull(_rowId, "Parameter rowId is not null");
 			return _rowId;
 		}
-
+		
 		private HUEditorRowType getType()
 		{
 			Check.assumeNotNull(type, "Parameter type is not null");
@@ -580,12 +603,6 @@ public final class HUEditorRow implements IViewRow
 			{
 				return processed.booleanValue();
 			}
-		}
-
-		public Builder setHUId(final Integer huId)
-		{
-			this.huId = huId;
-			return this;
 		}
 
 		public Builder setCode(final String code)

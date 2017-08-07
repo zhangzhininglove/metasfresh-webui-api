@@ -1,5 +1,7 @@
 package de.metas.ui.web.picking.process;
 
+import static de.metas.ui.web.picking.process.AD_Message_Values.MSG_WEBUI_PICKING_NOT_TOP_LEVEL_HU;
+
 import org.adempiere.exceptions.AdempiereException;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -38,6 +40,12 @@ import de.metas.ui.web.window.datatypes.DocumentId;
  * #L%
  */
 
+/**
+ * This process is called from the HU selection dialog that is opened by {@link WEBUI_Picking_OpenHUsToPick}.
+ * 
+ * @author metas-dev <dev@metasfresh.com>
+ *
+ */
 public class WEBUI_Picking_PickSelectedHU extends ViewBasedProcessTemplate implements IProcessPrecondition
 {
 	@Autowired
@@ -56,7 +64,7 @@ public class WEBUI_Picking_PickSelectedHU extends ViewBasedProcessTemplate imple
 		final HUEditorRow huRow = getSingleSelectedRow();
 		if (!huRow.isTopLevel())
 		{
-			return ProcessPreconditionsResolution.reject("not top level HU");
+			return ProcessPreconditionsResolution.reject(msgBL.getTranslatableMsgText(MSG_WEBUI_PICKING_NOT_TOP_LEVEL_HU));
 		}
 
 		return ProcessPreconditionsResolution.accept();
@@ -82,6 +90,9 @@ public class WEBUI_Picking_PickSelectedHU extends ViewBasedProcessTemplate imple
 
 		invalidateView(pickingSlotsView.getViewId()); // picking slots view
 		invalidateView(pickingSlotsView.getParentViewId()); // picking view
+
+		// After this process finished successfully go back to picking slots view
+		getResult().setWebuiIncludedViewIdToOpen(pickingSlotsView.getViewId().getViewId());
 
 		return MSG_OK;
 	}
