@@ -1,5 +1,7 @@
 package de.metas.ui.web.handlingunits;
 
+import static org.adempiere.model.InterfaceWrapperHelper.loadOutOfTrx;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -7,14 +9,11 @@ import java.util.Set;
 import org.adempiere.ad.dao.IQueryBuilder;
 import org.adempiere.ad.dao.impl.TypedSqlQueryFilter;
 import org.adempiere.ad.service.IADReferenceDAO;
-import org.adempiere.ad.trx.api.ITrx;
-import org.adempiere.model.InterfaceWrapperHelper;
 import org.adempiere.model.PlainContextAware;
 import org.adempiere.util.GuavaCollectors;
 import org.adempiere.util.Services;
 import org.compiere.model.I_C_UOM;
 import org.compiere.model.I_M_Product;
-import org.compiere.util.Env;
 import org.slf4j.Logger;
 
 import com.google.common.collect.ImmutableList;
@@ -39,6 +38,7 @@ import de.metas.ui.web.handlingunits.HUIdsFilterHelper.HUIdsFilterData;
 import de.metas.ui.web.handlingunits.util.HUPackingInfoFormatter;
 import de.metas.ui.web.handlingunits.util.HUPackingInfos;
 import de.metas.ui.web.view.descriptor.SqlViewBinding;
+import de.metas.ui.web.view.descriptor.SqlViewRowIdsConverter;
 import de.metas.ui.web.window.datatypes.WindowId;
 import de.metas.ui.web.window.datatypes.json.JSONLookupValue;
 import lombok.Builder;
@@ -98,12 +98,18 @@ public class HUEditorViewRepository
 	{
 		return sqlViewBinding;
 	}
-
-	public List<HUEditorRow> retrieveHUEditorRows(final Set<Integer> huIds)
+	
+	SqlViewRowIdsConverter getRowIdsConverter()
 	{
+		return getSqlViewBinding().getRowIdsConverter();
+	}
+
+	public List<HUEditorRow> retrieveHUEditorRows(@NonNull final Set<Integer> huIds)
+	{
+		final int topLevelHUId = -1;
 		return retrieveTopLevelHUs(huIds)
 				.stream()
-				.map(hu -> createHUEditorRow(hu, true))
+				.map(hu -> createHUEditorRow(hu, topLevelHUId))
 				.collect(GuavaCollectors.toImmutableList());
 	}
 
@@ -122,11 +128,12 @@ public class HUEditorViewRepository
 
 		// TODO: check if the huId is part of our collection
 
-		final I_M_HU hu = InterfaceWrapperHelper.create(Env.getCtx(), huId, I_M_HU.class, ITrx.TRXNAME_None);
-		return createHUEditorRow(hu, true);
+		final I_M_HU hu = loadOutOfTrx(huId, I_M_HU.class);
+		final int topLevelHUId = -1; // assume given huId is a top level HU
+		return createHUEditorRow(hu, topLevelHUId);
 	}
 
-	private static List<I_M_HU> retrieveTopLevelHUs(final Collection<Integer> huIds)
+	private static List<I_M_HU> retrieveTopLevelHUs(@NonNull final Collection<Integer> huIds)
 	{
 		if (huIds.isEmpty())
 		{
@@ -149,7 +156,9 @@ public class HUEditorViewRepository
 				.list();
 	}
 
-	private HUEditorRow createHUEditorRow(final I_M_HU hu, final boolean topLevel)
+	private HUEditorRow createHUEditorRow(
+			@NonNull final I_M_HU hu,
+			final int topLevelHUId)
 	{
 		final boolean aggregatedTU = Services.get(IHandlingUnitsBL.class).isAggregateHU(hu);
 
@@ -171,13 +180,13 @@ public class HUEditorViewRepository
 		final int huId = hu.getM_HU_ID();
 
 		final HUEditorRow.Builder huEditorRow = HUEditorRow.builder(windowId)
-				.setRowId(HUEditorRow.rowIdFromM_HU_ID(huId))
+				.setRowId(HUEditorRowId.ofHU(huId, topLevelHUId))
 				.setType(huRecordType)
-				.setTopLevel(topLevel)
+				.setTopLevel(topLevelHUId <= 0)
 				.setProcessed(processed)
 				.setAttributesProvider(attributesProvider)
 				//
-				.setHUId(huId)
+				//.setHUId(huId)
 				.setCode(hu.getValue())
 				.setHUUnitType(huUnitTypeLookupValue)
 				.setHUStatus(huStatus)
@@ -196,6 +205,7 @@ public class HUEditorViewRepository
 
 		//
 		// Included HUs
+		final int topLevelHUIdEffective = topLevelHUId > 0 ? topLevelHUId : huId;
 		if (aggregatedTU)
 		{
 			final IHUStorageFactory storageFactory = Services.get(IHandlingUnitsBL.class).getStorageFactory();
@@ -203,7 +213,7 @@ public class HUEditorViewRepository
 					.getStorage(hu)
 					.getProductStorages()
 					.stream()
-					.map(huStorage -> createHUEditorRow(huId, huStorage, processed))
+					.map(huStorage -> createHUEditorRow(huId, topLevelHUIdEffective, huStorage, processed))
 					.forEach(huEditorRow::addIncludedRow);
 
 		}
@@ -212,7 +222,7 @@ public class HUEditorViewRepository
 			final IHandlingUnitsDAO handlingUnitsDAO = Services.get(IHandlingUnitsDAO.class);
 			handlingUnitsDAO.retrieveIncludedHUs(hu)
 					.stream()
-					.map(includedHU -> createHUEditorRow(includedHU, false))
+					.map(includedHU -> createHUEditorRow(includedHU, topLevelHUIdEffective))
 					.forEach(huEditorRow::addIncludedRow);
 		}
 		else if (X_M_HU_PI_Version.HU_UNITTYPE_TransportUnit.equals(huUnitTypeCode))
@@ -223,7 +233,7 @@ public class HUEditorViewRepository
 					.stream()
 					.map(includedVHU -> storageFactory.getStorage(includedVHU))
 					.flatMap(vhuStorage -> vhuStorage.getProductStorages().stream())
-					.map(vhuProductStorage -> createHUEditorRow(huId, vhuProductStorage, processed))
+					.map(vhuProductStorage -> createHUEditorRow(huId, topLevelHUId, vhuProductStorage, processed))
 					.forEach(huEditorRow::addIncludedRow);
 		}
 		else if (X_M_HU_PI_Version.HU_UNITTYPE_VirtualPI.equals(huUnitTypeCode))
@@ -262,7 +272,12 @@ public class HUEditorViewRepository
 		}
 	}
 
-	private final boolean extractProcessed(final I_M_HU hu)
+	/**
+	 * Note (ts): I experimented with injecting this logic from outside, in the form of a {@link java.util.function.Function},<br>
+	 * but it would have made the whole thing much more complex<br>
+	 * <b>If</b> you want to refactor this code, please make sure that it does not get more complicated to debug it.
+	 */
+	private final boolean extractProcessed(@NonNull final I_M_HU hu)
 	{
 		//
 		// Receipt schedule => consider the HU as processed if is not Planning (FIXME HARDCODED)
@@ -291,7 +306,7 @@ public class HUEditorViewRepository
 		return productStorage;
 	}
 
-	private HUEditorRow createHUEditorRow(final int parent_HU_ID, final IHUProductStorage huStorage, final boolean processed)
+	private HUEditorRow createHUEditorRow(final int parent_HU_ID, final int topLevelHUId, final IHUProductStorage huStorage, final boolean processed)
 	{
 		final I_M_HU hu = huStorage.getM_HU();
 		final int huId = hu.getM_HU_ID();
@@ -299,13 +314,13 @@ public class HUEditorViewRepository
 		final HUEditorRowAttributesProvider attributesProviderEffective = huId != parent_HU_ID ? attributesProvider : null;
 
 		return HUEditorRow.builder(windowId)
-				.setRowId(HUEditorRow.rowIdFromM_HU_Storage(huId, product.getM_Product_ID()))
+				.setRowId(HUEditorRowId.ofHUStorage(huId, topLevelHUId, product.getM_Product_ID()))
 				.setType(HUEditorRowType.HUStorage)
 				.setTopLevel(false)
 				.setProcessed(processed)
 				.setAttributesProvider(attributesProviderEffective)
 				//
-				.setHUId(huId)
+				//.setHUId(huId)
 				// .setCode(hu.getValue()) // NOTE: don't show value on storage level
 				.setHUUnitType(JSONLookupValue.of(X_M_HU_PI_Version.HU_UNITTYPE_VirtualPI, "CU"))
 				.setHUStatus(createHUStatusLookupValue(hu))

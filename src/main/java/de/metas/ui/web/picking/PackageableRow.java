@@ -48,8 +48,14 @@ import lombok.ToString;
  * #L%
  */
 
+/**
+ * Rows shown in {@link PackageableView}. Each row basically represents one {@link I_M_Packageable_V}.
+ * 
+ * @author metas-dev <dev@metasfresh.com>
+ *
+ */
 @ToString(exclude = "_fieldNameAndJsonValues")
-public final class PickingRow implements IViewRow
+public final class PackageableRow implements IViewRow
 {
 	private final ViewId viewId;
 	private final DocumentId id;
@@ -57,44 +63,68 @@ public final class PickingRow implements IViewRow
 	private final boolean processed;
 	private final DocumentPath documentPath;
 
-	@ViewColumn(widgetType = DocumentFieldWidgetType.Lookup, captionKey = I_M_Packageable_V.COLUMNNAME_M_Warehouse_ID, layouts = {
-			@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 10)
-	})
+	@ViewColumn(widgetType = DocumentFieldWidgetType.Lookup, captionKey = I_M_Packageable_V.COLUMNNAME_M_Warehouse_ID, layouts =
+		{
+				@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 10)
+		})
 	private final LookupValue warehouse;
-	@ViewColumn(widgetType = DocumentFieldWidgetType.Lookup, captionKey = I_M_Packageable_V.COLUMNNAME_M_Product_ID, layouts = {
-			@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 20)
-	})
+
+	@ViewColumn(widgetType = DocumentFieldWidgetType.Lookup, captionKey = I_M_Packageable_V.COLUMNNAME_M_Product_ID, layouts =
+		{
+				@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 20)
+		})
 	private final LookupValue product;
-	@ViewColumn(widgetType = DocumentFieldWidgetType.Quantity, captionKey = I_M_Packageable_V.COLUMNNAME_QtyToDeliver, layouts = {
-			@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 30)
-	})
+
+	@ViewColumn(widgetType = DocumentFieldWidgetType.Quantity, captionKey = I_M_Packageable_V.COLUMNNAME_QtyToDeliver, layouts =
+		{
+				@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 30)
+		})
 	private final BigDecimal qtyToDeliver;
-	@ViewColumn(widgetType = DocumentFieldWidgetType.DateTime, captionKey = I_M_Packageable_V.COLUMNNAME_DeliveryDate, layouts = {
-			@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 40)
-	})
+
+	@ViewColumn(widgetType = DocumentFieldWidgetType.Quantity, captionKey = I_M_Packageable_V.COLUMNNAME_QtyPickedPlanned, layouts =
+		{
+				@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 35)
+		})
+	private final BigDecimal qtyPickedPlanned;
+
+	@ViewColumn(widgetType = DocumentFieldWidgetType.DateTime, captionKey = I_M_Packageable_V.COLUMNNAME_DeliveryDate, layouts =
+		{
+				@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 40)
+		})
 	private final java.util.Date deliveryDate;
-	@ViewColumn(widgetType = DocumentFieldWidgetType.DateTime, captionKey = I_M_Packageable_V.COLUMNNAME_PreparationDate, layouts = {
-			@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 50)
-	})
+
+	@ViewColumn(widgetType = DocumentFieldWidgetType.DateTime, captionKey = I_M_Packageable_V.COLUMNNAME_PreparationDate, layouts =
+		{
+				@ViewColumnLayout(when = JSONViewDataType.grid, seqNo = 50)
+		})
 	private final java.util.Date preparationDate;
-	
+
+	private final int shipmentScheduleId;
+
 	private final ViewId includedViewId;
 
 	private transient ImmutableMap<String, Object> _fieldNameAndJsonValues;
 
+	public static PackageableRow cast(final IViewRow row)
+	{
+		return (PackageableRow)row;
+	}
+
 	@Builder
-	private PickingRow(
+	private PackageableRow(
 			@NonNull final DocumentId id,
 			@NonNull final ViewId viewId,
 			final IViewRowType type,
 			final boolean processed,
 			@NonNull final DocumentPath documentPath,
-			//
+
 			final LookupValue warehouse,
 			final LookupValue product,
 			final BigDecimal qtyToDeliver,
+			final BigDecimal qtyPickedPlanned,
 			final Date deliveryDate,
-			final Date preparationDate)
+			final Date preparationDate,
+			final int shipmentScheduleId)
 	{
 		this.id = id;
 		this.viewId = viewId;
@@ -105,9 +135,14 @@ public final class PickingRow implements IViewRow
 		this.warehouse = warehouse;
 		this.product = product;
 		this.qtyToDeliver = qtyToDeliver;
+		this.qtyPickedPlanned = qtyPickedPlanned != null ? qtyPickedPlanned : BigDecimal.ZERO;
 		this.deliveryDate = deliveryDate;
 		this.preparationDate = preparationDate;
-		
+		this.shipmentScheduleId = shipmentScheduleId;
+
+		// create the included view's ID
+		// note that despite all our packageable-rows have the same picking slots, the IDs still need to be individual per-row,
+		// because we need to notify the picking slot view of this packageable-rows is selected at a given point in time
 		this.includedViewId = PickingSlotViewsIndexStorage.createViewId(viewId, id);
 	}
 
@@ -173,5 +208,10 @@ public final class PickingRow implements IViewRow
 	public ViewId getIncludedViewId()
 	{
 		return includedViewId;
+	}
+
+	public int getShipmentScheduleId()
+	{
+		return shipmentScheduleId;
 	}
 }
