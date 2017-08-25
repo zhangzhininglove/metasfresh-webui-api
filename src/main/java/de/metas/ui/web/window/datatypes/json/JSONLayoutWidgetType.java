@@ -47,6 +47,8 @@ public enum JSONLayoutWidgetType
 	, BinaryData
 
 	, Button, ActionButton, ProcessButton, ZoomIntoButton
+	
+	, Labels
 	//
 	;
 
@@ -89,6 +91,7 @@ public enum JSONLayoutWidgetType
 			.put(DocumentFieldWidgetType.ActionButton, JSONLayoutWidgetType.ActionButton)
 			.put(DocumentFieldWidgetType.ProcessButton, JSONLayoutWidgetType.ProcessButton)
 			.put(DocumentFieldWidgetType.ZoomIntoButton, JSONLayoutWidgetType.ZoomIntoButton)
+			.put(DocumentFieldWidgetType.Labels, JSONLayoutWidgetType.Labels)
 			.build();
 
 }

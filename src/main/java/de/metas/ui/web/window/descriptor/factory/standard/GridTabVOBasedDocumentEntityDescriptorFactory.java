@@ -1,5 +1,6 @@
 package de.metas.ui.web.window.descriptor.factory.standard;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -8,19 +9,24 @@ import java.util.stream.Collectors;
 import org.adempiere.ad.expression.api.ConstantLogicExpression;
 import org.adempiere.ad.expression.api.IExpression;
 import org.adempiere.ad.expression.api.ILogicExpression;
+import org.adempiere.model.InterfaceWrapperHelper;
 import org.adempiere.util.Check;
 import org.adempiere.util.Services;
 import org.adempiere.util.lang.IPair;
 import org.adempiere.util.lang.ImmutablePair;
 import org.compiere.model.GridFieldVO;
 import org.compiere.model.GridTabVO;
+import org.compiere.model.I_AD_UI_Element;
+import org.compiere.util.DisplayType;
 import org.slf4j.Logger;
 
 import de.metas.adempiere.service.IColumnBL;
+import de.metas.i18n.IModelTranslationMap;
 import de.metas.logging.LogManager;
 import de.metas.ui.web.process.ProcessId;
 import de.metas.ui.web.window.WindowConstants;
 import de.metas.ui.web.window.datatypes.DocumentType;
+import de.metas.ui.web.window.datatypes.LookupValue.IntegerLookupValue;
 import de.metas.ui.web.window.descriptor.ButtonFieldActionDescriptor;
 import de.metas.ui.web.window.descriptor.ButtonFieldActionDescriptor.ButtonFieldActionType;
 import de.metas.ui.web.window.descriptor.DetailId;
@@ -74,7 +80,10 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 	// State
 	private final DocumentEntityDescriptor.Builder _documentEntryBuilder;
 
-	public GridTabVOBasedDocumentEntityDescriptorFactory(final GridTabVO gridTabVO, final GridTabVO parentTabVO, final boolean isSOTrx)
+	public GridTabVOBasedDocumentEntityDescriptorFactory(final GridTabVO gridTabVO,
+			final GridTabVO parentTabVO,
+			final boolean isSOTrx,
+			final List<I_AD_UI_Element> labelsUIElements)
 	{
 		final boolean rootEntity = parentTabVO == null;
 
@@ -90,14 +99,14 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 
 		//
 		// Create initial document entity & field builders
-		_documentEntryBuilder = createDocumentEntityBuilder(gridTabVO, parentTabVO, isSOTrx);
+		_documentEntryBuilder = createDocumentEntityBuilder(gridTabVO, parentTabVO, isSOTrx, labelsUIElements);
 
 		//
 		// Document summary
-		if(rootEntity)
+		if (rootEntity)
 		{
 			final IDocumentFieldValueProvider summaryValueProvider = GenericDocumentSummaryValueProvider.of(_documentEntryBuilder);
-			if(summaryValueProvider != null)
+			if (summaryValueProvider != null)
 			{
 				addInternalVirtualField(WindowConstants.FIELDNAME_DocumentSummary, DocumentFieldWidgetType.Text, summaryValueProvider);
 			}
@@ -142,7 +151,10 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 		return _documentEntryBuilder;
 	}
 
-	private DocumentEntityDescriptor.Builder createDocumentEntityBuilder(final GridTabVO gridTabVO, final GridTabVO parentTabVO, final boolean isSOTrx)
+	private DocumentEntityDescriptor.Builder createDocumentEntityBuilder(final GridTabVO gridTabVO,
+			final GridTabVO parentTabVO,
+			final boolean isSOTrx,
+			final List<I_AD_UI_Element> labelsUIElements)
 	{
 		final String tableName = gridTabVO.getTableName();
 
@@ -199,6 +211,12 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 				.stream()
 				.forEach(gridFieldVO -> createAndAddDocumentField(entityDescriptorBuilder, gridFieldVO));
 
+		//
+		// Labels field descriptors
+		labelsUIElements
+				// .stream().filter(uiElement -> X_AD_UI_Element.AD_UI_ELEMENTTYPE_Labels.equals(uiElement.getAD_UI_ElementType())) // assume they are already filtered
+				.forEach(labelUIElement -> createAndAddLabelsDocumentField(entityDescriptorBuilder, labelUIElement));
+
 		return entityDescriptorBuilder;
 	}
 
@@ -208,7 +226,7 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 		return documentField(fieldName);
 	}
 
-	private DocumentFieldDescriptor.Builder documentField(final String fieldName)
+	public DocumentFieldDescriptor.Builder documentField(final String fieldName)
 	{
 		return documentEntity().getFieldBuilder(fieldName);
 	}
@@ -295,21 +313,21 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 				readonlyLogic = gridFieldVO.getReadOnlyLogic();
 			}
 		}
-		
+
 		//
 		// Button action
 		final ButtonFieldActionDescriptor buttonAction;
-		if(!isParentLinkColumn && widgetType.isButton())
+		if (!isParentLinkColumn && widgetType.isButton())
 		{
 			buttonAction = extractButtonFieldActionDescriptor(entityDescriptor.getTableNameOrNull(), fieldName, gridFieldVO.AD_Process_ID);
-			if(buttonAction != null)
+			if (buttonAction != null)
 			{
 				final ButtonFieldActionType actionType = buttonAction.getActionType();
 				if (actionType == ButtonFieldActionType.processCall)
 				{
 					widgetType = DocumentFieldWidgetType.ProcessButton;
 				}
-				else if(actionType == ButtonFieldActionType.genericZoomInto)
+				else if (actionType == ButtonFieldActionType.genericZoomInto)
 				{
 					widgetType = DocumentFieldWidgetType.ZoomIntoButton;
 					readonlyLogic = ConstantLogicExpression.FALSE; // allow pressing the button
@@ -387,11 +405,11 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 		// Collect special field
 		collectSpecialField(fieldBuilder);
 	}
-	
+
 	private ButtonFieldActionDescriptor extractButtonFieldActionDescriptor(final String tableName, final String fieldName, final int adProcessId)
 	{
 		// Process call
-		if(adProcessId > 0)
+		if (adProcessId > 0)
 		{
 			// FIXME: hardcoded, exclude field when considering ProcessButton widget
 			// because it's AD_Process_ID it's a placeholder-ish one.
@@ -404,14 +422,14 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 			return ButtonFieldActionDescriptor.processCall(ProcessId.ofAD_Process_ID(adProcessId));
 			// TODO widgetType = DocumentFieldWidgetType.ProcessButton;
 		}
-		
+
 		// Generic ZoomInto button
-		if(tableName != null)
+		if (tableName != null)
 		{
-			if(adColumnBL.isRecordColumnName(fieldName))
+			if (adColumnBL.isRecordColumnName(fieldName))
 			{
 				final String zoomIntoTableIdFieldName = adColumnBL.getTableColumnName(tableName, fieldName).orElse(null);
-				if(zoomIntoTableIdFieldName != null)
+				if (zoomIntoTableIdFieldName != null)
 				{
 					return ButtonFieldActionDescriptor.genericZoomInto(zoomIntoTableIdFieldName);
 				}
@@ -422,7 +440,64 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 		return null;
 	}
 
-	public final DocumentFieldDescriptor.Builder addInternalVirtualField(
+	private final void createAndAddLabelsDocumentField(final DocumentEntityDescriptor.Builder entityDescriptor, final I_AD_UI_Element labelsUIElement)
+	{
+		// TODO
+		labelsUIElement.getLabels_Selector_Field_ID();
+
+		final String labelsTableName = labelsUIElement.getLabels_Tab().getAD_Table().getTableName();
+		final LookupDescriptorProvider lookupDescriptorProvider = SqlLookupDescriptor.builder()
+				.setColumnName(labelsTableName + "_ID")
+				.setDisplayType(DisplayType.Search)
+				// .setAD_Val_Rule_ID(AD_Val_Rule_ID) // TODO enforce parent link!
+				.buildProvider();
+
+		final IModelTranslationMap trlMap = InterfaceWrapperHelper.getModelTranslationMap(labelsUIElement);
+		final DocumentFieldDescriptor.Builder fieldBuilder = DocumentFieldDescriptor.builder(getLabelsFieldName(labelsUIElement))
+				.setCaption(trlMap.getColumnTrl(I_AD_UI_Element.COLUMNNAME_Name, labelsUIElement.getName()))
+				// .setDescription(gridFieldVO.getDescriptionTrls(), gridFieldVO.getDescription())
+				//
+				.setKey(false)
+				.setParentLink(false)
+				//
+				.setWidgetType(DocumentFieldWidgetType.Lookup)
+				// .setButtonActionDescriptor(buttonAction)
+				// .setLookupDescriptorProvider(lookupDescriptorProvider)
+//				.setValueClass(DocumentFieldWidgetType.Labels.getValueClass())
+				.setValueClass(IntegerLookupValue.class)
+				.setVirtualField(false)
+				.setCalculated(false)
+				.setLookupDescriptorProvider(lookupDescriptorProvider)
+		//
+		// .setDefaultValueExpression(defaultValueExpression)
+		//
+		// .addCharacteristicIfTrue(keyColumn, Characteristic.SideListField)
+		// .addCharacteristicIfTrue(keyColumn, Characteristic.GridViewField)
+		// .addCharacteristicIfTrue(gridFieldVO.isSelectionColumn(), Characteristic.AllowFiltering)
+		//
+		// .setReadonlyLogic(readonlyLogic)
+		// .setAlwaysUpdateable(alwaysUpdateable)
+		// .setMandatoryLogic(gridFieldVO.isMandatory() ? ConstantLogicExpression.TRUE : gridFieldVO.getMandatoryLogic())
+		// .setDisplayLogic(gridFieldVO.getDisplayLogic())
+		//
+		// .setDataBinding(fieldBinding)
+		;
+
+		//
+		// Add Field builder to document entity
+		entityDescriptor.addField(fieldBuilder);
+
+		//
+		// Collect special field
+		collectSpecialField(fieldBuilder);
+	}
+
+	public static final String getLabelsFieldName(final I_AD_UI_Element uiElement)
+	{
+		return "Labels_" + uiElement.getAD_UI_Element_ID();
+	}
+
+	private final DocumentFieldDescriptor.Builder addInternalVirtualField(
 			final String fieldName //
 			, final DocumentFieldWidgetType widgetType //
 			, final IDocumentFieldValueProvider valueProvider //
@@ -511,11 +586,11 @@ import de.metas.ui.web.window.model.sql.SqlDocumentsRepository;
 		}
 
 		// HARDCODED: DocAction shall always be updateable
-		if(WindowConstants.FIELDNAME_DocAction.equals(gridFieldVO.getColumnName()))
+		if (WindowConstants.FIELDNAME_DocAction.equals(gridFieldVO.getColumnName()))
 		{
 			return true;
 		}
-		
+
 		return gridFieldVO.isAlwaysUpdateable();
 	}
 

@@ -40,6 +40,8 @@ interface IWindowUIElementsProvider
 	List<I_AD_UI_ElementGroup> getUIElementGroups(I_AD_UI_Column uiColumn);
 
 	List<I_AD_UI_Element> getUIElements(I_AD_UI_ElementGroup uiElementGroup);
+	
+	List<I_AD_UI_Element> getLabelsUIElements(int AD_Tab_ID);
 
 	List<I_AD_UI_ElementField> getUIElementFields(I_AD_UI_Element uiElement);
 }

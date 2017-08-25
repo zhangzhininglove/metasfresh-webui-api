@@ -9,6 +9,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 
 import de.metas.ui.web.window.datatypes.LookupValue.IntegerLookupValue;
+import de.metas.ui.web.window.datatypes.LookupValuesList;
 
 /*
  * #%L
@@ -79,6 +80,7 @@ public enum DocumentFieldWidgetType
 	, ZoomIntoButton(LayoutAlign.Left, Integer.class, DisplayType.Button) //
 
 	//
+	, Labels(LayoutAlign.Left, LookupValuesList.class, -1) //
 	;
 
 	private static final Set<DocumentFieldWidgetType> TYPES_Date = Sets.immutableEnumSet(Date, Time, DateTime);

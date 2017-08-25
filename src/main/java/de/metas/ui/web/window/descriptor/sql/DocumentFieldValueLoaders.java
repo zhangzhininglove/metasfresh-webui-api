@@ -109,6 +109,11 @@ public final class DocumentFieldValueLoaders
 			return new StringLookupValueDocumentFieldValueLoader(sqlColumnName, sqlDisplayColumnName);
 		}
 	}
+	
+	public static final DocumentFieldValueLoader toLabelValues(final String sqlColumnName)
+	{
+		return new LabelsLookupValueDocumentFieldValueLoader(sqlColumnName);
+	}
 
 	//
 	//
@@ -314,7 +319,7 @@ public final class DocumentFieldValueLoaders
 		private final String sqlDisplayColumnName;
 
 		@Override
-		public Object retrieveFieldValue(final ResultSet rs, final boolean isDisplayColumnAvailable, final String adLanguage) throws SQLException
+		public StringLookupValue retrieveFieldValue(final ResultSet rs, final boolean isDisplayColumnAvailable, final String adLanguage) throws SQLException
 		{
 			final String key = rs.getString(sqlColumnName);
 			if (rs.wasNull())
@@ -331,6 +336,20 @@ public final class DocumentFieldValueLoaders
 				return StringLookupValue.unknown(key);
 			}
 		}
+	}
+	
+	@Value
+	private static final class LabelsLookupValueDocumentFieldValueLoader implements DocumentFieldValueLoader
+	{
+		private final String sqlColumnName;
+		private final String sqlDisplayColumnName = null;
+
+		@Override
+		public Object retrieveFieldValue(final ResultSet rs, final boolean isDisplayColumnAvailable, final String adLanguage) throws SQLException
+		{
+			return null; // TODO: implement
+		}
+
 	}
 
 }

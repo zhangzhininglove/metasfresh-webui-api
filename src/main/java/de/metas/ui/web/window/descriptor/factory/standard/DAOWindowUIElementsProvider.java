@@ -10,6 +10,7 @@ import org.compiere.model.I_AD_UI_Element;
 import org.compiere.model.I_AD_UI_ElementField;
 import org.compiere.model.I_AD_UI_ElementGroup;
 import org.compiere.model.I_AD_UI_Section;
+import org.compiere.model.X_AD_UI_Element;
 import org.compiere.util.Env;
 
 /*
@@ -62,6 +63,15 @@ final class DAOWindowUIElementsProvider implements IWindowUIElementsProvider
 	public List<I_AD_UI_Element> getUIElements(final I_AD_UI_ElementGroup uiElementGroup)
 	{
 		return windowDAO.retrieveUIElements(uiElementGroup);
+	}
+	
+	@Override
+	public List<I_AD_UI_Element> getLabelsUIElements(final int AD_Tab_ID)
+	{
+		return windowDAO.retrieveUIElementsQueryByTabId(AD_Tab_ID)
+				.addEqualsFilter(I_AD_UI_Element.COLUMN_AD_UI_ElementType, X_AD_UI_Element.AD_UI_ELEMENTTYPE_Labels)
+				.create()
+				.list(I_AD_UI_Element.class);
 	}
 
 	@Override

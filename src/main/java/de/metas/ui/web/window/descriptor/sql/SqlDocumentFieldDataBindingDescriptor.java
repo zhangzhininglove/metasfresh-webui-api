@@ -438,6 +438,11 @@ public class SqlDocumentFieldDataBindingDescriptor implements DocumentFieldDataB
 			{
 				return DocumentFieldValueLoaders.toByteArray(sqlColumnName, encrypted);
 			}
+			// Labels
+			else if (DocumentFieldWidgetType.Labels.getValueClass().equals(valueClass))
+			{
+				return DocumentFieldValueLoaders.toLabelValues(sqlColumnName);
+			}
 			else
 			{
 				return DocumentFieldValueLoaders.toString(sqlColumnName, encrypted);
