@@ -42,6 +42,7 @@ import de.metas.ui.web.window.datatypes.json.JSONDocument;
 import de.metas.ui.web.window.datatypes.json.JSONDocumentChangedEvent;
 import de.metas.ui.web.window.datatypes.json.JSONDocumentChangedWebSocketEvent;
 import de.metas.ui.web.window.datatypes.json.JSONDocumentLayout;
+import de.metas.ui.web.window.datatypes.json.JSONDocumentList;
 import de.metas.ui.web.window.datatypes.json.JSONDocumentPath;
 import de.metas.ui.web.window.datatypes.json.JSONDocumentReference;
 import de.metas.ui.web.window.datatypes.json.JSONDocumentReferencesGroup;
@@ -176,7 +177,7 @@ public class WindowRestController
 	}
 
 	@GetMapping("/{windowId}/{documentId}")
-	public List<JSONDocument> getData(
+	public JSONDocumentList getData(
 			@PathVariable("windowId") final String windowIdStr,
 			@PathVariable("documentId") final String documentIdStr,
 			@RequestParam(name = PARAM_FieldsList, required = false) @ApiParam("comma separated field names") final String fieldsListStr,
@@ -189,7 +190,7 @@ public class WindowRestController
 	}
 
 	@GetMapping("/{windowId}/{documentId}/{tabId}")
-	public List<JSONDocument> getData(
+	public JSONDocumentList getData(
 			@PathVariable("windowId") final String windowIdStr,
 			@PathVariable("documentId") final String documentIdStr,
 			@PathVariable("tabId") final String tabIdStr,
@@ -204,7 +205,7 @@ public class WindowRestController
 	}
 
 	@GetMapping("/{windowId}/{documentId}/{tabId}/{rowId}")
-	public List<JSONDocument> getData(
+	public JSONDocumentList getData(
 			@PathVariable("windowId") final String windowIdStr //
 			, @PathVariable("documentId") final String documentIdStr //
 			, @PathVariable("tabId") final String tabIdStr //
@@ -219,7 +220,7 @@ public class WindowRestController
 		return getData(documentPath, fieldsListStr, advanced, orderBys);
 	}
 
-	private List<JSONDocument> getData(final DocumentPath documentPath, final String fieldsListStr, final boolean advanced, final List<DocumentQueryOrderBy> orderBys)
+	private JSONDocumentList getData(final DocumentPath documentPath, final String fieldsListStr, final boolean advanced, final List<DocumentQueryOrderBy> orderBys)
 	{
 		userSession.assertLoggedIn();
 
@@ -248,7 +249,9 @@ public class WindowRestController
 				throw new InvalidDocumentPathException(documentPath);
 			}
 
-			return JSONDocument.ofDocumentsList(documents, jsonOpts);
+			return JSONDocumentList.builder()
+					.result(JSONDocument.ofDocumentsList(documents, jsonOpts))
+					.build();
 		});
 	}
 
